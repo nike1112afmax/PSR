@@ -1,0 +1,3040 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PSR 產品規格書產生器</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="docx_lib.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #e8ff47;
+    --accent2: #47c8ff;
+    --text: #f0f0f0;
+    --text-muted: #888;
+    --text-dim: #555;
+    --danger: #ff5447;
+    --success: #47ff8c;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── HEADER ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 100;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    background: rgba(232,255,71,0.08);
+    border: 1px solid rgba(232,255,71,0.2);
+    padding: 4px 10px;
+    border-radius: 3px;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .header-version {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  /* ── LAYOUT ── */
+  .app {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 57px);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* Upload Zone */
+  .upload-zone {
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(232,255,71,0.05);
+  }
+  .upload-zone .upload-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .upload-zone p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .upload-zone strong {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  #fileInput { display: none; }
+
+  .file-loaded {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(71,255,140,0.06);
+    border: 1px solid rgba(71,255,140,0.2);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .file-loaded .file-icon { font-size: 20px; }
+  .file-loaded .file-info { flex: 1; }
+  .file-loaded .file-name { color: var(--success); font-weight: 500; }
+  .file-loaded .file-meta { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+  .file-loaded .btn-reupload {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--sans);
+    transition: all 0.15s;
+  }
+  .file-loaded .btn-reupload:hover { border-color: var(--text-muted); color: var(--text); }
+
+  /* Tool mode switcher */
+  .tool-mode-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .tool-mode-btn {
+    flex: 1;
+    padding: 8px 4px;
+    font-family: var(--mono);
+    font-size: 9px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text-muted);
+    border: none;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .tool-mode-btn.active { background: rgba(71,200,255,0.12); color: var(--accent2); }
+
+  /* LC doc styles */
+  .lc-doc {
+    background: #fff;
+    color: #111;
+    max-width: 1400px;
+    margin: 0 auto;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 4px 40px rgba(0,0,0,0.4);
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+  }
+  .lc-item-header {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 16px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .lc-tab-badge {
+    font-family: monospace;
+    font-size: 10px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 3px 10px;
+    border-radius: 3px;
+    letter-spacing: 0.1em;
+  }
+  .lc-item-num {
+    font-size: 22px;
+    font-weight: 800;
+    cursor: text;
+    outline: none;
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+  }
+  .lc-section-hdr {
+    background: #2d5080;
+    color: #fff;
+    padding: 5px 14px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .lc-table { width: 100%; border-collapse: collapse; }
+  .lc-table th {
+    background: #f0f4f8;
+    border: 1px solid #dde3ea;
+    padding: 5px 8px;
+    font-size: 7.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #555;
+    text-align: center;
+    vertical-align: bottom;
+    line-height: 1.3;
+  }
+  .lc-table th.th-key { text-align: left; min-width: 180px; background: #e8eef5; }
+  .lc-table td {
+    border: 1px solid #eee;
+    padding: 5px 8px;
+    font-size: 8.5pt;
+    vertical-align: middle;
+    text-align: center;
+    min-width: 60px;
+  }
+  .lc-table td.td-key {
+    text-align: left;
+    background: #fafafa;
+    font-weight: 500;
+    color: #444;
+    font-size: 8pt;
+  }
+  .lc-table td[contenteditable="true"] { background: #fffde7; outline: none; cursor: text; }
+  .lc-table td.val-o { color: #1a7a3c; font-weight: 700; }
+  .lc-region-th {
+    background: #1e3a5f !important;
+    color: #fff !important;
+    font-size: 8px !important;
+    text-align: center;
+    border: 1px solid #2d5080 !important;
+  }
+  .lc-country-th {
+    background: #2d5080 !important;
+    color: #cde !important;
+    font-size: 7.5px !important;
+  }
+
+  /* Tab selector */
+  .tab-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tab-pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-pill:hover { border-color: var(--accent2); color: var(--accent2); }
+  .tab-pill.active {
+    background: rgba(71,200,255,0.1);
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  /* Search */
+  .search-wrap {
+    position: relative;
+  }
+  .search-wrap input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px 9px 34px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-wrap input:focus { border-color: var(--accent2); }
+  .search-wrap input::placeholder { color: var(--text-dim); }
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 14px;
+    pointer-events: none;
+  }
+
+  /* Model list */
+  .model-list-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .model-list-wrap::-webkit-scrollbar { width: 4px; }
+  .model-list-wrap::-webkit-scrollbar-track { background: transparent; }
+  .model-list-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .model-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.12s;
+    margin-bottom: 2px;
+  }
+  .model-item:hover { background: var(--surface); }
+  .model-item.selected { background: rgba(232,255,71,0.07); }
+  .model-item .model-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    flex: 1;
+  }
+  .model-item .model-series {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .status-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .status-MP { background: rgba(71,255,140,0.12); color: var(--success); border: 1px solid rgba(71,255,140,0.2); }
+  .status-EOL { background: rgba(255,84,71,0.1); color: var(--danger); border: 1px solid rgba(255,84,71,0.2); }
+  .status-NPI { background: rgba(71,200,255,0.1); color: var(--accent2); border: 1px solid rgba(71,200,255,0.2); }
+  .status-PVT { background: rgba(200,71,255,0.1); color: #c847ff; border: 1px solid rgba(200,71,255,0.2); }
+  .status-other { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .empty-state {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  /* ── MAIN AREA ── */
+  .main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* Toolbar */
+  .toolbar {
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .toolbar-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+  }
+  .toolbar-title span { color: var(--accent); }
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .btn-default { background: var(--surface); color: var(--text-muted); }
+  .btn-default:hover { border-color: var(--text-muted); color: var(--text); }
+  .btn-accent {
+    background: var(--accent);
+    color: #0f0f0f;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .btn-accent:hover { background: #d4e83e; }
+  .btn-blue {
+    background: rgba(71,200,255,0.1);
+    color: var(--accent2);
+    border-color: rgba(71,200,255,0.3);
+  }
+  .btn-blue:hover { background: rgba(71,200,255,0.2); }
+  .btn-red {
+    background: rgba(255,84,71,0.1);
+    color: var(--danger);
+    border-color: rgba(255,84,71,0.3);
+  }
+  .btn-red:hover { background: rgba(255,84,71,0.2); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* Preview area */
+  .preview-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+  .preview-wrap::-webkit-scrollbar { width: 6px; }
+  .preview-wrap::-webkit-scrollbar-track { background: transparent; }
+  .preview-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Welcome screen */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    gap: 16px;
+    padding: 40px;
+  }
+  .welcome-icon { font-size: 48px; }
+  .welcome h2 { font-size: 20px; font-weight: 500; color: var(--text-muted); }
+  .welcome p { font-size: 13px; color: var(--text-dim); line-height: 1.7; max-width: 400px; }
+  .welcome-steps {
+    display: flex;
+    gap: 24px;
+    margin-top: 8px;
+  }
+  .welcome-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    max-width: 120px;
+  }
+  .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+  }
+  .step-text { font-size: 11px; color: var(--text-dim); text-align: center; line-height: 1.4; }
+
+  /* PSR Document */
+  .psr-doc {
+    background: #fff;
+    color: #111;
+    max-width: 1400px;
+    margin: 0 auto;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 4px 40px rgba(0,0,0,0.4);
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+  }
+
+  .doc-header {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 16px 28px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .doc-header .doc-title { font-size: 28px; font-weight: 800; letter-spacing: 0.01em; }
+  .doc-header .doc-meta { font-size: 10px; opacity: 0.7; margin-top: 4px; }
+  .doc-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .confidential-badge {
+    display: inline-block;
+    background: #cc2200;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 3px 10px;
+    border-radius: 2px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.2);
+    outline: none;
+    font-family: Arial, sans-serif;
+    text-transform: uppercase;
+  }
+  .confidential-badge:focus { outline: 2px solid rgba(255,255,255,0.5); }
+
+  /* Product Info Panel */
+  .product-info-panel {
+    background: #f7f9fc;
+    border-bottom: 2px solid #dde3ea;
+    padding: 16px 28px;
+  }
+  .info-panel-title {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #1e3a5f;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #dde3ea;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px 16px;
+    margin-bottom: 14px;
+  }
+  .info-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .info-field label {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+  }
+  .info-field input, .info-field select {
+    font-family: Arial, sans-serif;
+    font-size: 8.5pt;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    padding: 4px 7px;
+    color: #222;
+    background: #fff;
+    outline: none;
+    width: 100%;
+  }
+  .info-field input:focus, .info-field select:focus { border-color: #1e3a5f; }
+
+  .advantages-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 16px;
+  }
+  .advantage-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .advantage-field label {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+  }
+  .advantage-field textarea {
+    font-family: Arial, sans-serif;
+    font-size: 8.5pt;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    padding: 5px 7px;
+    color: #222;
+    background: #fff;
+    outline: none;
+    resize: vertical;
+    min-height: 52px;
+    width: 100%;
+    line-height: 1.4;
+  }
+  .advantage-field textarea:focus { border-color: #1e3a5f; }
+
+  .doc-body { padding: 0; }
+
+  .spec-section { border-bottom: 1px solid #e5e5e5; }
+  .spec-section:last-child { border-bottom: none; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #f0f4f8;
+    border-bottom: 1px solid #dde3ea;
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-header:hover { background: #e8eef5; }
+  .section-header h3 {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #1e3a5f;
+  }
+  .section-header .section-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .section-toggle {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    color: #999;
+    font-size: 12px;
+    border-radius: 3px;
+    transition: transform 0.2s;
+  }
+  .section-toggle.collapsed { transform: rotate(-90deg); }
+
+  .spec-table {
+    width: 100%;
+    border-collapse: collapse;
+    display: table;
+  }
+  .spec-table.hidden { display: none; }
+
+  .spec-row {
+    display: table-row;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .spec-row:last-child { border-bottom: none; }
+  .spec-row:hover .spec-value { background: #fafbfc; }
+
+  .spec-key, .spec-value {
+    display: table-cell;
+    padding: 6px 14px;
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  .spec-key {
+    width: 200px;
+    min-width: 200px;
+    font-weight: 500;
+    color: #444;
+    background: #fafafa;
+    border-right: 1px solid #eee;
+    font-size: 8.5pt;
+  }
+  .spec-value {
+    font-size: 8.5pt;
+    color: #222;
+    white-space: pre-wrap;
+    position: relative;
+  }
+
+  /* Edit mode */
+  .spec-value[contenteditable="true"] {
+    outline: none;
+    background: #fffde7;
+    border-left: 2px solid #f0c000;
+    padding-left: 12px;
+    min-width: 100px;
+  }
+  .spec-key[contenteditable="true"] {
+    outline: none;
+    background: #f0f4ff;
+    border-right: 2px solid #aabbee;
+  }
+
+  .row-actions {
+    display: none;
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    gap: 3px;
+  }
+  .spec-row:hover .row-actions { display: flex; }
+  .row-action-btn {
+    width: 20px; height: 20px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.1s;
+  }
+  .btn-hide-row { background: #ffeeee; color: #cc4444; }
+  .btn-hide-row:hover { background: #ffdddd; }
+
+  .spec-row.row-hidden {
+    opacity: 0.3;
+    background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(200,0,0,0.03) 4px, rgba(200,0,0,0.03) 8px);
+  }
+
+  /* Add row */
+  .add-row-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-top: 1px dashed #e0e0e0;
+    color: #aaa;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    transition: all 0.15s;
+  }
+  .add-row-btn:hover { color: #1e3a5f; background: #f5f8ff; }
+
+  /* Edit toolbar */
+  .edit-toolbar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 24px;
+    background: rgba(232,255,71,0.05);
+    border-bottom: 1px solid rgba(232,255,71,0.15);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .edit-toolbar.visible { display: flex; }
+  .edit-indicator {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: var(--sans);
+    z-index: 999;
+    transform: translateY(20px);
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast-success { background: rgba(71,255,140,0.15); border: 1px solid rgba(71,255,140,0.3); color: var(--success); }
+  .toast-info { background: rgba(71,200,255,0.12); border: 1px solid rgba(71,200,255,0.25); color: var(--accent2); }
+  .toast-error { background: rgba(255,84,71,0.12); border: 1px solid rgba(255,84,71,0.25); color: var(--danger); }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    width: 400px;
+    max-width: 90vw;
+  }
+  .modal h3 { font-size: 15px; font-weight: 500; margin-bottom: 8px; }
+  .modal p { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6; }
+  .modal input, .modal select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 5px;
+    font-family: var(--sans);
+    font-size: 13px;
+    outline: none;
+    margin-bottom: 10px;
+  }
+  .modal input:focus, .modal select:focus { border-color: var(--accent2); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+  /* Loading */
+  .loading-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(15,15,15,0.85);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .loading-overlay.open { display: flex; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+
+  /* Compare mode toggle */
+  .mode-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 6px 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text-muted);
+    border: none;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .mode-btn.active {
+    background: rgba(232,255,71,0.1);
+    color: var(--accent);
+  }
+
+  /* Compare selection bar */
+  .compare-bar {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 4px;
+  }
+  .compare-bar.visible { display: flex; }
+  .compare-bar-title {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .compare-slots {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .compare-slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    border: 1px dashed var(--border);
+    font-size: 11px;
+    min-height: 28px;
+  }
+  .compare-slot.filled {
+    border-style: solid;
+    border-color: rgba(232,255,71,0.3);
+    background: rgba(232,255,71,0.05);
+  }
+  .compare-slot .slot-num {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    width: 14px;
+    flex-shrink: 0;
+  }
+  .compare-slot .slot-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    flex: 1;
+  }
+  .compare-slot .slot-empty { font-size: 11px; color: var(--text-dim); flex: 1; }
+  .compare-slot .slot-remove {
+    width: 16px; height: 16px;
+    border: none; background: none;
+    color: var(--text-dim);
+    cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .compare-slot .slot-remove:hover { color: var(--danger); background: rgba(255,84,71,0.1); }
+  .btn-compare-go {
+    width: 100%;
+    padding: 7px;
+    font-family: var(--mono);
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid rgba(232,255,71,0.3);
+    background: rgba(232,255,71,0.08);
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-top: 2px;
+  }
+  .btn-compare-go:hover { background: rgba(232,255,71,0.15); }
+  .btn-compare-go:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* model-item in compare mode */
+  .model-item.in-compare {
+    background: rgba(232,255,71,0.07);
+    border-left: 2px solid var(--accent);
+  }
+  .model-item .compare-check {
+    width: 16px; height: 16px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    flex-shrink: 0;
+    color: transparent;
+    transition: all 0.12s;
+  }
+  .model-item.in-compare .compare-check {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+  }
+
+  /* Compare column header row (sticky above spec table) */
+  .compare-col-header {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 2px solid #1e3a5f;
+    background: #fff;
+  }
+  .compare-col-header .cch-key {
+    width: 200px;
+    min-width: 200px;
+    background: #1e3a5f;
+    padding: 8px 14px;
+    font-size: 8.5px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family: Arial, sans-serif;
+  }
+  .compare-col-header .cch-model {
+    flex: 1;
+    padding: 6px 14px;
+    border-left: 1px solid #dde3ea;
+    background: #1e3a5f;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .compare-col-header .cch-model .cch-num {
+    font-size: 8px;
+    color: rgba(255,255,255,0.45);
+    font-family: Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .compare-col-header .cch-model .cch-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    font-family: Arial, sans-serif;
+    outline: none;
+    cursor: text;
+    min-width: 40px;
+    white-space: nowrap;
+  }
+  .compare-col-header .cch-model .cch-name:focus {
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    padding: 0 3px;
+  }
+    display: flex;
+    background: #162d4a;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .compare-model-label {
+    flex: 1;
+    padding: 8px 14px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    border-right: 1px solid rgba(255,255,255,0.1);
+    font-family: Arial, sans-serif;
+  }
+  .compare-model-label:last-child { border-right: none; }
+  .compare-model-label .cml-num {
+    font-size: 8px;
+    opacity: 0.5;
+    display: block;
+    margin-bottom: 2px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Compare spec row */
+  .spec-row.diff-row .spec-value { background: #fffbe6 !important; }
+  .spec-row.diff-row .spec-key { background: #fdf8e1 !important; }
+
+  /* ── APP MODE SWITCHER ── */
+  .app-mode-switcher {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .app-mode-btn {
+    flex: 1;
+    padding: 10px 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-align: center;
+    cursor: pointer;
+    background: none;
+    color: var(--text-dim);
+    border: none;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+  }
+  .app-mode-btn:hover { color: var(--text-muted); }
+  .app-mode-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: rgba(232,255,71,0.04);
+  }
+
+  /* Sidebar panels per mode */
+  .sidebar-panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+  .sidebar-panel.active { display: flex; }
+
+  /* Logistic / Compliance doc styles */
+  .lc-doc {
+    background: #fff;
+    color: #111;
+    max-width: 1400px;
+    margin: 0 auto;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 4px 40px rgba(0,0,0,0.4);
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+  }
+  .lc-header {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .lc-header .lc-title { font-size: 18px; font-weight: 800; }
+  .lc-header .lc-subtitle { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.75); margin-top: 3px; }
+  .lc-header .lc-item { font-size: 16px; font-weight: 700; text-align: right; }
+  .lc-header .lc-type { font-size: 9px; color: rgba(255,255,255,0.5); text-align: right; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px; }
+
+  /* Logistic group section */
+  .lc-section-header {
+    background: #f0f4f8;
+    border-bottom: 1px solid #dde3ea;
+    border-top: 1px solid #dde3ea;
+    padding: 5px 16px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #1e3a5f;
+  }
+  .lc-row {
+    display: flex;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .lc-row:last-child { border-bottom: none; }
+  .lc-row:hover .lc-val { background: #fafbfc; }
+  .lc-key {
+    width: 260px; min-width: 260px;
+    padding: 5px 14px;
+    font-size: 8.5pt;
+    font-weight: 500;
+    color: #444;
+    background: #fafafa;
+    border-right: 1px solid #eee;
+    display: flex;
+    align-items: center;
+  }
+  .lc-val {
+    flex: 1;
+    padding: 5px 14px;
+    font-size: 8.5pt;
+    color: #222;
+    display: flex;
+    align-items: center;
+    outline: none;
+  }
+  .lc-val[contenteditable="true"] { background: #fffde7; border-left: 2px solid #f0c000; }
+  .lc-key[contenteditable="true"] { background: #f0f4ff; }
+
+  /* Compliance matrix */
+  .compliance-wrap { overflow-x: auto; }
+  .compliance-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 8pt;
+    font-family: Arial, sans-serif;
+  }
+  .compliance-table th, .compliance-table td {
+    border: 1px solid #dde3ea;
+    padding: 4px 7px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .compliance-table .th-region {
+    background: #1e3a5f;
+    color: #fff;
+    font-weight: 700;
+    text-align: center;
+    font-size: 8.5pt;
+  }
+  .compliance-table .th-country {
+    background: #2d5080;
+    color: #cce0ff;
+    text-align: center;
+    font-size: 7.5pt;
+  }
+  .compliance-table .th-cert {
+    background: #3a6090;
+    color: #ddeeff;
+    text-align: center;
+    font-size: 7pt;
+    max-width: 70px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .compliance-table .th-vm {
+    background: #f0f4f8;
+    color: #666;
+    text-align: center;
+    font-size: 7pt;
+  }
+  .compliance-table .td-item {
+    background: #f7f9fc;
+    font-weight: 700;
+    font-family: monospace;
+    font-size: 8.5pt;
+    color: #1e3a5f;
+    white-space: nowrap;
+  }
+  .compliance-table .td-pass {
+    background: rgba(71,200,71,0.12);
+    color: #1a7a1a;
+    text-align: center;
+    font-weight: 600;
+  }
+  .compliance-table .td-empty {
+    background: #fafafa;
+    color: #ccc;
+    text-align: center;
+  }
+  .compliance-table td[contenteditable="true"] {
+    background: #fffde7 !important;
+    outline: none;
+  }
+  @media print {
+    @page { size: A3 landscape; margin: 1.27cm; }
+    body { background: white; }
+    .app { display: block; height: auto; }
+    .sidebar, .toolbar, header, .edit-toolbar { display: none !important; }
+    .preview-wrap { padding: 0; overflow: visible; }
+    .psr-doc { box-shadow: none; max-width: 100%; border-radius: 0; }
+    .row-actions, .add-row-btn, .section-controls { display: none !important; }
+    .spec-table { display: table !important; }
+    .spec-row.row-hidden { display: none !important; }
+    .compare-header-models { display: flex !important; }
+    .header-version { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PSR</div>
+  <h1>Product Spec Sheet Generator</h1>
+  <div class="header-version">v1.2 · EDU Product Line · Developed by Ted Wang</div>
+</header>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <!-- ── App Mode Switcher ── -->
+    <div class="app-mode-switcher">
+      <button class="app-mode-btn active" id="appModeSpec"    onclick="setAppMode('spec')">📋 Product<br>Spec</button>
+      <button class="app-mode-btn"        id="appModeLogistic" onclick="setAppMode('logistic')">📦 Logistic</button>
+      <button class="app-mode-btn"        id="appModeCompliance" onclick="setAppMode('compliance')">✅ Compliance</button>
+    </div>
+
+    <!-- ── PANEL: Product Spec ── -->
+    <div class="sidebar-panel active" id="panelSpec">
+      <!-- Upload -->
+      <div class="sidebar-section">
+        <div class="section-label">① Upload Data Source</div>
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+          <span class="upload-icon">📊</span>
+          <p>Click or drag &amp; drop an <strong>Excel file</strong><br>(.xlsx format)</p>
+        </div>
+        <div class="file-loaded" id="fileLoaded" style="display:none">
+          <div class="file-icon">📗</div>
+          <div class="file-info">
+            <div class="file-name" id="fileName">—</div>
+            <div class="file-meta" id="fileMeta">—</div>
+          </div>
+          <button class="btn-reupload" onclick="resetFile()">Change</button>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFile(this)">
+      </div>
+      <!-- Tab selector -->
+      <div class="sidebar-section" id="tabSection" style="display:none">
+        <div class="section-label">② Select Product Line Tab</div>
+        <div class="tab-pills" id="tabPills"></div>
+      </div>
+      <!-- Search + Model list -->
+      <div class="sidebar-section" id="searchSection" style="display:none">
+        <div class="section-label">③ Select Model</div>
+        <div class="mode-toggle" id="modeToggle">
+          <button class="mode-btn active" id="modeSingle" onclick="setMode('single')">Single</button>
+          <button class="mode-btn" id="modeCompare" onclick="setMode('compare')">Compare ≤6</button>
+        </div>
+        <div class="compare-bar" id="compareBar">
+          <div class="compare-bar-title">Selected for comparison</div>
+          <div class="compare-slots" id="compareSlots"></div>
+          <button class="btn-compare-go" id="btnCompareGo" onclick="generateCompare()" disabled>Generate Comparison →</button>
+        </div>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="Type Item Number..." oninput="filterModels()">
+        </div>
+      </div>
+      <div class="model-list-wrap" id="modelListWrap" style="display:none">
+        <div id="modelList"></div>
+      </div>
+    </div>
+
+    <!-- ── PANEL: Logistic ── -->
+    <div class="sidebar-panel" id="panelLogistic">
+      <div class="sidebar-section">
+        <div class="section-label">① Upload Data Source</div>
+        <div class="file-loaded" id="lcFileLoaded" style="display:none">
+          <div class="file-icon">📗</div>
+          <div class="file-info">
+            <div class="file-name" id="lcFileName">—</div>
+            <div class="file-meta" id="lcFileMeta">—</div>
+          </div>
+        </div>
+        <div class="empty-state" id="lcNoFile" style="padding:16px 8px">Upload an Excel file first</div>
+      </div>
+      <div class="sidebar-section" id="lcSearchSection" style="display:none">
+        <div class="section-label">② Select Items (≤6)</div>
+        <div class="compare-bar visible" id="lcSelectionBar">
+          <div class="compare-bar-title">Selected</div>
+          <div class="compare-slots" id="lcSlots"></div>
+          <button class="btn-compare-go" id="lcGoBtn" onclick="generateLCDoc('logistic')" disabled>Generate →</button>
+        </div>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="lcSearchInput" placeholder="Type Item Number..." oninput="filterLCModels('logistic')">
+        </div>
+      </div>
+      <div class="model-list-wrap" id="lcLogisticListWrap" style="display:none">
+        <div id="lcLogisticList"></div>
+      </div>
+    </div>
+
+    <!-- ── PANEL: Compliance ── -->
+    <div class="sidebar-panel" id="panelCompliance">
+      <div class="sidebar-section">
+        <div class="section-label">① Upload Data Source</div>
+        <div class="file-loaded" id="cmFileLoaded" style="display:none">
+          <div class="file-icon">📗</div>
+          <div class="file-info">
+            <div class="file-name" id="cmFileName">—</div>
+            <div class="file-meta" id="cmFileMeta">—</div>
+          </div>
+        </div>
+        <div class="empty-state" id="cmNoFile" style="padding:16px 8px">Upload an Excel file first</div>
+      </div>
+      <div class="sidebar-section" id="cmSearchSection" style="display:none">
+        <div class="section-label">② Select Items (≤6)</div>
+        <div class="compare-bar visible" id="cmSelectionBar">
+          <div class="compare-bar-title">Selected</div>
+          <div class="compare-slots" id="cmSlots"></div>
+          <button class="btn-compare-go" id="cmGoBtn" onclick="generateLCDoc('compliance')" disabled>Generate →</button>
+        </div>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="cmSearchInput" placeholder="Type Item Number..." oninput="filterLCModels('compliance')">
+        </div>
+      </div>
+      <div class="model-list-wrap" id="cmComplianceListWrap" style="display:none">
+        <div id="cmComplianceList"></div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- Edit toolbar -->
+    <div class="edit-toolbar" id="editToolbar">
+      <div class="edit-indicator"></div>
+      <span>Edit Mode</span>
+      <span style="color:var(--text-dim)">·</span>
+      <span style="color:var(--text-dim);font-size:11px">Click any spec value to edit directly</span>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar" id="toolbar" style="display:none">
+      <div class="toolbar-title" id="toolbarTitle">—</div>
+      <button class="btn btn-default" id="btnToggleEdit" onclick="toggleEdit()">✏️ Edit Mode</button>
+      <button class="btn btn-default" onclick="toggleAllSections()">📂 Expand / Collapse All</button>
+      <button class="btn btn-blue" onclick="exportWord()">📄 Export Word</button>
+      <button class="btn btn-red" onclick="window.print()">🖨️ Print / PDF</button>
+    </div>
+
+    <!-- Preview -->
+    <div class="preview-wrap" id="previewWrap">
+      <div class="welcome" id="welcomeScreen">
+        <div class="welcome-icon">📋</div>
+        <h2>PSR Spec Sheet Generator</h2>
+        <p>Upload an Excel data source, select a model, and instantly generate an editable product spec sheet</p>
+        <div class="welcome-steps">
+          <div class="welcome-step">
+            <div class="step-num">1</div>
+            <div class="step-text">Upload latest Excel file</div>
+          </div>
+          <div class="welcome-step">
+            <div class="step-num">2</div>
+            <div class="step-text">Select product line tab</div>
+          </div>
+          <div class="welcome-step">
+            <div class="step-num">3</div>
+            <div class="step-text">Search or click a model</div>
+          </div>
+          <div class="welcome-step">
+            <div class="step-num">4</div>
+            <div class="step-text">Edit and export</div>
+          </div>
+        </div>
+      </div>
+      <div id="docContainer"></div>
+    </div>
+  </main>
+</div>
+
+<!-- Add Row Modal -->
+<div class="modal-overlay" id="addRowModal">
+  <div class="modal">
+    <h3>Add Spec Row</h3>
+    <p id="addRowModalDesc">Add a custom spec field to this section</p>
+    <input type="text" id="newRowKey" placeholder="Spec name (e.g. Special Note)">
+    <div id="newRowValueFields"></div>
+    <div class="modal-actions">
+      <button class="btn btn-default" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="confirmAddRow()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rename Section Modal -->
+<div class="modal-overlay" id="renameSectionModal">
+  <div class="modal">
+    <h3>Rename Section</h3>
+    <p>Enter a new name for this section header</p>
+    <input type="text" id="renameSectionInput" placeholder="Section name">
+    <div class="modal-actions">
+      <button class="btn btn-default" onclick="closeRenameModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="confirmRenameSection()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Processing...</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──
+let workbook = null;
+let currentTab = null;
+let currentModel = null;
+let allModels = [];
+let editMode = false;
+let allSectionsOpen = true;
+let pendingSection = null;
+let compareMode = false;
+let compareList = [];
+let appMode = 'spec'; // 'spec' | 'logistic' | 'compliance'
+let logisticModels = [];
+let complianceModels = [];
+
+// ── APP MODE SWITCHER ──
+function setAppMode(mode) {
+  appMode = mode;
+  ['spec','logistic','compliance'].forEach(m => {
+    document.getElementById('appMode' + m.charAt(0).toUpperCase() + m.slice(1)).classList.toggle('active', m === mode);
+    document.getElementById('panel' + m.charAt(0).toUpperCase() + m.slice(1)).classList.toggle('active', m === mode);
+  });
+  // Sync file status into LC panels if workbook already loaded
+  if (workbook) syncLCPanels();
+  // Reset main area to welcome unless something is already shown
+  if (mode !== 'spec') {
+    document.getElementById('toolbar').style.display = 'none';
+    document.getElementById('editToolbar').classList.remove('visible');
+    document.getElementById('docContainer').innerHTML = '';
+    document.getElementById('welcomeScreen').style.display = 'flex';
+    if (workbook) {
+      loadLCModels(mode);
+    }
+  }
+}
+
+function syncLCPanels() {
+  const name = document.getElementById('fileName').textContent;
+  const meta = document.getElementById('fileMeta').textContent;
+  ['lc','cm'].forEach(prefix => {
+    document.getElementById(prefix + 'FileLoaded').style.display = 'flex';
+    document.getElementById(prefix + (prefix==='lc'?'FileName':'FileName')).textContent = name;
+    document.getElementById(prefix + (prefix==='lc'?'FileMeta':'FileMeta')).textContent = meta;
+  });
+  document.getElementById('lcFileName').textContent = name;
+  document.getElementById('lcFileMeta').textContent = meta;
+  document.getElementById('cmFileName').textContent = name;
+  document.getElementById('cmFileMeta').textContent = meta;
+}
+
+// ── FILE HANDLING ──
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+
+function handleFile(input) {
+  if (input.files[0]) processFile(input.files[0]);
+}
+
+function processFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) { showToast('Please upload a .xlsx Excel file', 'error'); return; }
+  showLoading('Reading Excel file...');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      workbook = XLSX.read(e.target.result, { type: 'array' });
+      const modelCount = getTotalModelCount();
+      hideLoading();
+      document.getElementById('uploadZone').style.display = 'none';
+      document.getElementById('fileLoaded').style.display = 'flex';
+      document.getElementById('fileName').textContent = file.name;
+      document.getElementById('fileMeta').textContent = `${workbook.SheetNames.length} tabs · Loaded`;
+      renderTabPills();
+      showToast(`✓ Loaded ${file.name}`, 'success');
+      // Sync file info to LC panels
+      syncLCPanels();
+      if (appMode === 'logistic' || appMode === 'compliance') loadLCModels(appMode);
+    } catch (err) {
+      hideLoading();
+      showToast('Failed to parse file. Please check the format.', 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function resetFile() {
+  workbook = null; currentTab = null; currentModel = null; allModels = [];
+  compareList = []; compareMode = false; logisticModels = []; complianceModels = [];
+  document.getElementById('fileInput').value = '';
+  document.getElementById('uploadZone').style.display = '';
+  document.getElementById('fileLoaded').style.display = 'none';
+  document.getElementById('tabSection').style.display = 'none';
+  document.getElementById('searchSection').style.display = 'none';
+  document.getElementById('modelListWrap').style.display = 'none';
+  document.getElementById('toolbar').style.display = 'none';
+  document.getElementById('docContainer').innerHTML = '';
+  document.getElementById('welcomeScreen').style.display = 'flex';
+  // Hide LC panels
+  ['lcFileLoaded','cmFileLoaded','lcSearchSection','cmSearchSection','lcLogisticListWrap','cmComplianceListWrap'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+}
+
+// ── LOGISTIC & COMPLIANCE STATE ──
+let lcSelected = [];   // logistic selected items
+let cmSelected = [];   // compliance selected items
+
+function loadLCModels(mode) {
+  if (!workbook) return;
+  if (mode === 'logistic') {
+    const ws = workbook.Sheets['Logistic'];
+    if (!ws) { showToast('Logistic tab not found', 'error'); return; }
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    logisticModels = [];
+    raw.slice(2).forEach(r => {
+      if (!r[0]) return;
+      const raw0 = String(r[0]).trim();
+      // Keep all SKUs as one entry; display as first SKU + count if multiple
+      const skus = raw0.split('\n').map(s => s.trim()).filter(Boolean);
+      const displayItem = skus.join(' / ');
+      logisticModels.push({ item: displayItem, skus, row: r });
+    });
+    document.getElementById('lcNoFile').style.display = 'none';
+    document.getElementById('lcSearchSection').style.display = '';
+    document.getElementById('lcLogisticListWrap').style.display = '';
+    lcSelected = [];
+    updateLCSlots('logistic');
+    renderLCList('logistic', logisticModels);
+  } else {
+    const ws = workbook.Sheets['Compliance'];
+    if (!ws) { showToast('Compliance tab not found', 'error'); return; }
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    complianceModels = [];
+    raw.slice(5).forEach(r => {
+      if (!r[1]) return;
+      const raw1 = String(r[1]).trim();
+      const skus = raw1.split('\n').map(s => s.trim()).filter(Boolean);
+      const displayItem = skus.join(' / ');
+      const series = String(r[0]||'').trim();
+      complianceModels.push({ item: displayItem, skus, series, row: r });
+    });
+    document.getElementById('cmNoFile').style.display = 'none';
+    document.getElementById('cmSearchSection').style.display = '';
+    document.getElementById('cmComplianceListWrap').style.display = '';
+    cmSelected = [];
+    updateLCSlots('compliance');
+    renderLCList('compliance', complianceModels);
+  }
+}
+
+function updateLCSlots(mode) {
+  const sel    = mode === 'logistic' ? lcSelected : cmSelected;
+  const slotsEl = document.getElementById(mode === 'logistic' ? 'lcSlots' : 'cmSlots');
+  const goBtn   = document.getElementById(mode === 'logistic' ? 'lcGoBtn' : 'cmGoBtn');
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    const item = sel[i];
+    if (item) {
+      html += `<div class="compare-slot filled">
+        <span class="slot-num">${i+1}</span>
+        <span class="slot-name">${item}</span>
+        <button class="slot-remove" onclick="toggleLCItem('${mode}','${item.replace(/'/g,"\\'")}')">×</button>
+      </div>`;
+    } else {
+      html += `<div class="compare-slot">
+        <span class="slot-num">${i+1}</span>
+        <span class="slot-empty">Click to add</span>
+      </div>`;
+    }
+  }
+  slotsEl.innerHTML = html;
+  goBtn.disabled = sel.length < 1;
+  goBtn.textContent = sel.length >= 1 ? `Generate (${sel.length}) →` : 'Select at least 1 →';
+}
+
+function toggleLCItem(mode, itemNum) {
+  const sel = mode === 'logistic' ? lcSelected : cmSelected;
+  const idx = sel.indexOf(itemNum);
+  if (idx >= 0) {
+    sel.splice(idx, 1);
+  } else {
+    if (sel.length >= 6) { showToast('Maximum 6 items', 'error'); return; }
+    sel.push(itemNum);
+  }
+  updateLCSlots(mode);
+  renderLCList(mode, mode === 'logistic' ? logisticModels : complianceModels);
+}
+
+function renderLCList(mode, models) {
+  const listId  = mode === 'logistic' ? 'lcLogisticList' : 'cmComplianceList';
+  const sel     = mode === 'logistic' ? lcSelected : cmSelected;
+  const list    = document.getElementById(listId);
+  if (!models.length) { list.innerHTML = '<div class="empty-state">No models found.</div>'; return; }
+  list.innerHTML = models.map(m => {
+    const inSel = sel.includes(m.item);
+    const safe  = m.item.replace(/'/g,"\\'");
+    // For logistic: show first SKU bold + remaining as smaller text
+    let nameHtml;
+    if (m.skus && m.skus.length > 1) {
+      nameHtml = `<div class="model-name">${m.skus[0]}</div>
+        <div class="model-series" style="font-size:9px;line-height:1.5">${m.skus.slice(1).join(' · ')}</div>`;
+    } else {
+      nameHtml = `<div class="model-name">${m.item}</div>
+        ${m.series && m.series !== m.item ? `<div class="model-series">${m.series}</div>` : ''}`;
+    }
+    return `<div class="model-item${inSel ? ' in-compare' : ''}" onclick="toggleLCItem('${mode}','${safe}')">
+      <div class="compare-check">${inSel ? '✓' : ''}</div>
+      <div style="flex:1">${nameHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function filterLCModels(mode) {
+  const q = (mode === 'logistic'
+    ? document.getElementById('lcSearchInput')
+    : document.getElementById('cmSearchInput')).value.toLowerCase();
+  const models = mode === 'logistic' ? logisticModels : complianceModels;
+  const filtered = q
+    ? models.filter(m => (m.skus || [m.item]).some(sku => sku.toLowerCase().includes(q)))
+    : models;
+  renderLCList(mode, filtered);
+}
+
+function generateLCDoc(mode) {
+  const sel = mode === 'logistic' ? lcSelected : cmSelected;
+  if (!sel.length) return;
+  showLoading(`Building ${mode} view...`);
+  setTimeout(() => {
+    try {
+      const doc = mode === 'logistic' ? buildLogisticDoc(sel) : buildComplianceDoc(sel);
+      document.getElementById('welcomeScreen').style.display = 'none';
+      document.getElementById('docContainer').innerHTML = '';
+      document.getElementById('docContainer').appendChild(doc);
+      document.getElementById('toolbar').style.display = 'flex';
+      const label = sel.length === 1 ? sel[0] : `${sel.length} items`;
+      document.getElementById('toolbarTitle').innerHTML = `${mode === 'logistic' ? 'Logistic' : 'Compliance'} / <span>${label}</span>`;
+      editMode = false;
+      document.getElementById('editToolbar').classList.remove('visible');
+      document.getElementById('btnToggleEdit').textContent = '✏️ Edit Mode';
+      hideLoading();
+      showToast(`✓ ${mode} view ready`, 'success');
+    } catch(err) {
+      hideLoading();
+      showToast('Failed: ' + err.message, 'error');
+      console.error(err);
+    }
+  }, 50);
+}
+
+// Keep old selectLCModel for backwards compat (not used now)
+function selectLCModel(mode, itemNum) {
+  toggleLCItem(mode, itemNum);
+}
+
+// ── BUILD LOGISTIC DOC (multi-item) ──
+const LOGISTIC_SKIP_GROUP = '這頁資料變更後';
+
+function buildLogisticDoc(items) {
+  const ws  = workbook.Sheets['Logistic'];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  const row1 = raw[0] || [];  // Group headers
+  const row2 = raw[1] || [];  // Field names
+
+  // Find each item's data row via the logisticModels index
+  const modelRows = items.map(item => {
+    const entry = logisticModels.find(m => m.item === item);
+    if (!entry) throw new Error(`Item not found: ${item}`);
+    return entry.row;
+  });
+
+  const isMulti = items.length > 1;
+
+  // Build column map from Excel rows 1+2 — no hardcoding
+  const colMap = [];
+  let curGroup = '';
+  for (let c = 0; c < row2.length; c++) {
+    if (row1[c]) curGroup = String(row1[c]).trim();
+    const field = row2[c] ? String(row2[c]).replace(/\n/g, ' ').trim() : null;
+    if (!field) continue;
+    if (curGroup.startsWith(LOGISTIC_SKIP_GROUP)) continue;
+    if (field === 'Model no.') continue;
+    colMap.push({ c, group: curGroup, field });
+  }
+
+  const doc = document.createElement('div');
+  doc.className = 'lc-doc';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'lc-header';
+  hdr.innerHTML = `
+    <div>
+      <div class="lc-title">ViewSonic</div>
+      <div class="lc-subtitle" contenteditable="true" style="outline:none;cursor:text">Logistic Information</div>
+    </div>
+    <div style="text-align:right">
+      <div class="lc-type">Item${items.length > 1 ? 's' : ''}</div>
+      <div class="lc-item" style="font-size:${items.length > 2 ? '11px' : '14px'}">${
+        items.map(i => {
+          const e = logisticModels.find(m => m.item === i);
+          return e && e.skus && e.skus.length > 1 ? e.skus[0] : i;
+        }).join('  ·  ')
+      }</div>
+    </div>`;
+  doc.appendChild(hdr);
+
+  // Column header for multi-item
+  if (isMulti) {
+    const colHdr = document.createElement('div');
+    colHdr.style.cssText = 'display:flex;background:#162d4a;border-bottom:1px solid rgba(255,255,255,0.1)';
+    colHdr.innerHTML = `<div style="width:260px;min-width:260px;padding:6px 14px;font-size:8px;color:rgba(255,255,255,0.4);font-family:Arial;text-transform:uppercase;letter-spacing:0.1em">Specification</div>` +
+      items.map(item => {
+        const e = logisticModels.find(m => m.item === item);
+        const label = e && e.skus && e.skus.length > 1 ? e.skus.join(' / ') : item;
+        return `<div style="flex:1;padding:6px 10px;font-size:10px;font-weight:700;color:#fff;font-family:Arial;border-left:1px solid rgba(255,255,255,0.1);white-space:normal;line-height:1.4" contenteditable="true" spellcheck="false">${label}</div>`;
+      }).join('');
+    doc.appendChild(colHdr);
+  }
+
+  // Render rows grouped by Excel Row 1 group name
+  let currentGroup = null;
+  colMap.forEach(({ c, group, field }) => {
+    const vals = modelRows.map(r => {
+      const v = r[c];
+      return (v !== null && v !== undefined && String(v).trim() !== '') ? String(v).trim() : '—';
+    });
+
+    if (group !== currentGroup) {
+      currentGroup = group;
+      const secHdr = document.createElement('div');
+      secHdr.className = 'lc-section-header';
+      secHdr.textContent = group;
+      doc.appendChild(secHdr);
+    }
+
+    const row = document.createElement('div');
+    row.className = 'lc-row';
+
+    const keyCell = document.createElement('div');
+    keyCell.className = 'lc-key';
+    keyCell.textContent = field;
+    row.appendChild(keyCell);
+
+    if (isMulti) {
+      vals.forEach(val => {
+        const td = document.createElement('div');
+        td.className = 'lc-val';
+        td.style.borderLeft = '1px solid #eee';
+        td.textContent = val;
+        row.appendChild(td);
+      });
+    } else {
+      const td = document.createElement('div');
+      td.className = 'lc-val';
+      td.textContent = vals[0];
+      row.appendChild(td);
+    }
+    doc.appendChild(row);
+  });
+
+  return doc;
+}
+
+// ── BUILD COMPLIANCE DOC (matrix, multi-item) ──
+function buildComplianceDoc(items) {
+  const ws  = workbook.Sheets['Compliance'];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  const regRow  = raw[0] || [];
+  const ctryRow = raw[1] || [];
+  const certRow = raw[2] || [];
+  const vmRow   = raw[3] || [];
+
+  // Find each item's row via complianceModels index (handles multiline SKU cells)
+  const modelRows = items.map(item => {
+    const entry = complianceModels.find(m => m.item === item);
+    if (!entry) throw new Error(`Item not found: ${item}`);
+    return entry.row;
+  });
+
+  const DATA_START = 3;
+
+  // Build cert column list with resolved region/country (carry forward nulls)
+  const certCols = [];
+  let curReg = '', curCty = '';
+  for (let c = DATA_START; c < certRow.length; c++) {
+    if (regRow[c])  curReg = String(regRow[c]).trim();
+    if (ctryRow[c]) curCty = String(ctryRow[c]).trim();
+    const cert = certRow[c];
+    const vm   = vmRow[c] || '';
+    if (cert) certCols.push({ c, region: curReg, country: curCty, cert: String(cert).replace(/\n/g,' ').trim(), vm: String(vm).trim() });
+  }
+
+  // Group by region
+  const regionOrder = [];
+  const regionGroups = {};
+  certCols.forEach(col => {
+    if (!regionGroups[col.region]) { regionGroups[col.region] = []; regionOrder.push(col.region); }
+    regionGroups[col.region].push(col);
+  });
+
+  const doc = document.createElement('div');
+  doc.className = 'lc-doc';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'lc-header';
+  hdr.innerHTML = `
+    <div>
+      <div class="lc-title">ViewSonic</div>
+      <div class="lc-subtitle" contenteditable="true" style="outline:none;cursor:text" title="Click to edit">Compliance Certification Matrix</div>
+    </div>
+    <div style="text-align:right">
+      <div class="lc-type">Item${items.length > 1 ? 's' : ''}</div>
+      <div class="lc-item" style="font-size:${items.length > 2 ? '11px' : '14px'}">${items.join('  ·  ')}</div>
+    </div>`;
+  doc.appendChild(hdr);
+
+  // Table
+  const wrap = document.createElement('div');
+  wrap.className = 'compliance-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'compliance-table';
+  table.style.tableLayout = 'fixed';
+
+  const thead = document.createElement('thead');
+
+  // Row 1: Region (spans all cert cols per region) + Item Number headers
+  const trReg = document.createElement('tr');
+  // Left columns: Region label, Country, Certification, V/M
+  trReg.innerHTML = `
+    <th class="th-region" rowspan="4" style="width:70px;text-align:center">Region</th>
+    <th class="th-region" rowspan="4" style="width:90px;text-align:center">Country</th>
+    <th class="th-region" rowspan="4" style="width:140px;text-align:center">Certification</th>
+    <th class="th-region" rowspan="4" style="width:32px;text-align:center">V/M</th>`;
+
+  // Item number header cells spanning all regions
+  items.forEach(item => {
+    const th = document.createElement('th');
+    th.className = 'th-region';
+    th.colSpan = regionOrder.length;
+    th.style.cssText = 'min-width:70px;text-align:center';
+    th.contentEditable = 'true';
+    th.spellcheck = false;
+    th.textContent = item;
+    trReg.appendChild(th);
+  });
+  thead.appendChild(trReg);
+
+  // Row 2: Region names under each item
+  const trRegLabel = document.createElement('tr');
+  items.forEach(() => {
+    regionOrder.forEach(reg => {
+      const th = document.createElement('th');
+      th.className = 'th-country';
+      th.style.cssText = 'text-align:center;font-size:7pt';
+      th.textContent = reg;
+      trRegLabel.appendChild(th);
+    });
+  });
+  thead.appendChild(trRegLabel);
+
+  // Rows 3 & 4: empty (rowspan already handled)
+  thead.appendChild(document.createElement('tr'));
+  thead.appendChild(document.createElement('tr'));
+
+  table.appendChild(thead);
+
+  // Body: one row per certification
+  const tbody = document.createElement('tbody');
+
+  // Group rows by region for section coloring
+  const allCerts = certCols; // already in order
+
+  // Build a map: region → cols
+  allCerts.forEach(col => {
+    const tr = document.createElement('tr');
+
+    // Left cells
+    const tdReg = document.createElement('td');
+    tdReg.className = 'td-item';
+    tdReg.style.cssText = 'font-size:7.5pt;background:#f0f4f8;color:#1e3a5f;text-align:center;white-space:nowrap';
+    tdReg.textContent = col.region;
+    tr.appendChild(tdReg);
+
+    const tdCty = document.createElement('td');
+    tdCty.className = 'td-item';
+    tdCty.style.cssText = 'font-size:7.5pt;background:#f7f9fc;white-space:normal;line-height:1.3';
+    tdCty.textContent = col.country;
+    tr.appendChild(tdCty);
+
+    const tdCert = document.createElement('td');
+    tdCert.style.cssText = 'font-size:7.5pt;padding:4px 7px;background:#fff;white-space:normal;line-height:1.3;border:1px solid #dde3ea';
+    tdCert.textContent = col.cert;
+    tr.appendChild(tdCert);
+
+    const tdVm = document.createElement('td');
+    tdVm.style.cssText = `font-size:7.5pt;text-align:center;padding:4px 4px;border:1px solid #dde3ea;font-weight:700;color:${col.vm==='M'?'#c44':'#1a7a1a'}`;
+    tdVm.textContent = col.vm;
+    tr.appendChild(tdVm);
+
+    // Value cells: for each item, then for each region
+    items.forEach((_item, itemIdx) => {
+      regionOrder.forEach(reg => {
+        const td = document.createElement('td');
+        td.style.cssText = 'text-align:center;padding:3px 4px;border:1px solid #dde3ea;font-size:7.5pt';
+        td.spellcheck = false;
+
+        if (reg === col.region) {
+          // This cell is relevant — show value
+          const val = modelRows[itemIdx][col.c];
+          const valStr = val !== null && val !== undefined ? String(val).trim() : '';
+          if (valStr) {
+            td.textContent = valStr;
+            td.className = 'td-pass';
+          } else {
+            td.textContent = '—';
+            td.className = 'td-empty';
+          }
+        } else {
+          // Different region — not applicable
+          td.textContent = '';
+          td.style.background = '#f5f5f5';
+        }
+        tr.appendChild(td);
+      });
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  doc.appendChild(wrap);
+  return doc;
+}
+
+function getTotalModelCount() {
+  let count = 0;
+  workbook.SheetNames.forEach(name => {
+    const ws = workbook.Sheets[name];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    if (data.length > 2) count += data.slice(2).filter(r => r[1]).length;
+  });
+  return count;
+}
+
+// ── TAB PILLS ──
+const PRODUCT_TABS = ['IFP', 'IOB', 'VPC', 'Wi-Fi', 'PEN', 'STND', 'WMK', 'SEN', 'VIS'];
+
+function renderTabPills() {
+  const available = workbook.SheetNames.filter(n => PRODUCT_TABS.includes(n));
+  const pills = document.getElementById('tabPills');
+  pills.innerHTML = '';
+  available.forEach(name => {
+    const p = document.createElement('div');
+    p.className = 'tab-pill';
+    p.textContent = name;
+    p.onclick = () => selectTab(name, p);
+    pills.appendChild(p);
+  });
+  document.getElementById('tabSection').style.display = '';
+  // Auto-select IFP if available
+  const ifpPill = pills.querySelector('.tab-pill');
+  if (ifpPill) ifpPill.click();
+}
+
+function selectTab(tabName, pillEl) {
+  document.querySelectorAll('.tab-pill').forEach(p => p.classList.remove('active'));
+  pillEl.classList.add('active');
+  currentTab = tabName;
+  loadModels(tabName);
+}
+
+// ── MODEL LOADING ──
+function loadModels(tabName) {
+  const ws = workbook.Sheets[tabName];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  
+  allModels = [];
+  const dataStart = tabName === 'IFP' ? 3 : 3;
+  
+  for (let r = dataStart - 1; r < raw.length; r++) {
+    const row = raw[r];
+    // For IFP: col0=series, col1=item, col2=status
+    // For others: col0=item or series, col1=item or status
+    let item, status, series;
+    if (tabName === 'IFP') {
+      series = row[0]; item = row[1]; status = row[2];
+    } else if (['VPC'].includes(tabName)) {
+      series = row[0]; item = row[1]; status = row[2];
+    } else {
+      item = row[0]; status = row[1]; series = '';
+    }
+    if (item && typeof item === 'string' && item.trim()) {
+      // clean multiline item numbers
+      const items = item.split('\n').map(s => s.trim()).filter(Boolean);
+      items.forEach(it => allModels.push({ item: it, status: status || '', series: series || '' }));
+    }
+  }
+
+  document.getElementById('searchSection').style.display = '';
+  document.getElementById('modelListWrap').style.display = '';
+  document.getElementById('searchInput').value = '';
+  renderModelList(allModels);
+}
+
+function filterModels() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = q ? allModels.filter(m => m.item.toLowerCase().includes(q) || m.series.toLowerCase().includes(q)) : allModels;
+  renderModelList(filtered);
+}
+
+function renderModelList(models) {
+  const list = document.getElementById('modelList');
+  if (models.length === 0) {
+    list.innerHTML = '<div class="empty-state">No models found.<br>Please check the Item Number.</div>';
+    return;
+  }
+  list.innerHTML = models.map(m => {
+    const st = m.status ? m.status.replace(/[^A-Z]/g, '') : 'other';
+    const cls = ['MP','EOL','NPI','PVT'].includes(st) ? `status-${st}` : 'status-other';
+    const inCmp = compareList.includes(m.item);
+    const itemSafe = m.item.replace(/'/g,"\\'");
+    if (compareMode) {
+      return `<div class="model-item${inCmp ? ' in-compare' : ''}" onclick="toggleCompareItem('${itemSafe}')">
+        <div class="compare-check">${inCmp ? '✓' : ''}</div>
+        <div style="flex:1">
+          <div class="model-name">${m.item}</div>
+          ${m.series && m.series !== m.item ? `<div class="model-series">${m.series}</div>` : ''}
+        </div>
+        <span class="status-badge ${cls}">${m.status || '—'}</span>
+      </div>`;
+    }
+    return `<div class="model-item${currentModel === m.item ? ' selected' : ''}" onclick="selectModel('${itemSafe}')">
+      <div style="flex:1">
+        <div class="model-name">${m.item}</div>
+        ${m.series && m.series !== m.item ? `<div class="model-series">${m.series}</div>` : ''}
+      </div>
+      <span class="status-badge ${cls}">${m.status || '—'}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── MODE SWITCH ──
+function setMode(mode) {
+  compareMode = mode === 'compare';
+  document.getElementById('modeSingle').classList.toggle('active', !compareMode);
+  document.getElementById('modeCompare').classList.toggle('active', compareMode);
+  document.getElementById('compareBar').classList.toggle('visible', compareMode);
+  if (!compareMode) { compareList = []; updateCompareSlots(); }
+  filterModels();
+}
+
+function toggleCompareItem(itemNum) {
+  if (compareList.includes(itemNum)) {
+    compareList = compareList.filter(x => x !== itemNum);
+  } else {
+    if (compareList.length >= 6) { showToast('Maximum 6 models for comparison', 'error'); return; }
+    compareList.push(itemNum);
+  }
+  updateCompareSlots();
+  filterModels();
+}
+
+function updateCompareSlots() {
+  const slots = document.getElementById('compareSlots');
+  const go = document.getElementById('btnCompareGo');
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    const item = compareList[i];
+    if (item) {
+      html += `<div class="compare-slot filled">
+        <span class="slot-num">${i+1}</span>
+        <span class="slot-name">${item}</span>
+        <button class="slot-remove" onclick="toggleCompareItem('${item.replace(/'/g,"\\'")}')">×</button>
+      </div>`;
+    } else {
+      html += `<div class="compare-slot">
+        <span class="slot-num">${i+1}</span>
+        <span class="slot-empty">Click a model to add</span>
+      </div>`;
+    }
+  }
+  slots.innerHTML = html;
+  go.disabled = compareList.length < 2;
+  go.textContent = compareList.length >= 2
+    ? `Generate Comparison (${compareList.length}) →`
+    : 'Select at least 2 models →';
+}
+
+// ── SPEC GENERATION ──
+function selectModel(itemNum) {
+  currentModel = itemNum;
+  showLoading('Generating spec sheet...');
+  
+  setTimeout(() => {
+    try {
+      const doc = buildPSRDoc(itemNum);
+      document.getElementById('welcomeScreen').style.display = 'none';
+      document.getElementById('docContainer').innerHTML = '';
+      document.getElementById('docContainer').appendChild(doc);
+      document.getElementById('toolbar').style.display = 'flex';
+      document.getElementById('toolbarTitle').innerHTML = `Spec Sheet / <span>${itemNum}</span>`;
+      editMode = false;
+      document.getElementById('editToolbar').classList.remove('visible');
+      document.getElementById('btnToggleEdit').textContent = '✏️ Edit Mode';
+      hideLoading();
+      showToast(`✓ Spec sheet generated for ${itemNum}`, 'success');
+      filterModels(); // refresh highlight
+    } catch (err) {
+      hideLoading();
+      showToast('Generation failed: ' + err.message, 'error');
+      console.error(err);
+    }
+  }, 50);
+}
+
+// ── COMPARE GENERATION ──
+function generateCompare() {
+  if (compareList.length < 2) return;
+  showLoading('Building comparison...');
+
+  setTimeout(() => {
+    try {
+      const doc = buildCompareDoc(compareList);
+      document.getElementById('welcomeScreen').style.display = 'none';
+      document.getElementById('docContainer').innerHTML = '';
+      document.getElementById('docContainer').appendChild(doc);
+      document.getElementById('toolbar').style.display = 'flex';
+      document.getElementById('toolbarTitle').innerHTML = `Compare / <span>${compareList.join(' · ')}</span>`;
+      editMode = false;
+      document.getElementById('editToolbar').classList.remove('visible');
+      document.getElementById('btnToggleEdit').textContent = '✏️ Edit Mode';
+      hideLoading();
+      showToast(`✓ Comparison ready for ${compareList.length} models`, 'success');
+    } catch (err) {
+      hideLoading();
+      showToast('Comparison failed: ' + err.message, 'error');
+      console.error(err);
+    }
+  }, 50);
+}
+
+// ── BUILD COMPARE DOC ──
+function getModelData(itemNum) {
+  const ws = workbook.Sheets[currentTab];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  const row1 = raw[0] || [];
+  const row2 = raw[1] || [];
+  const hasSeriesCol = ['IFP','VPC'].includes(currentTab);
+  const itemColIdx = hasSeriesCol ? 1 : 0;
+  const statusColIdx = hasSeriesCol ? 2 : 1;
+  let modelRow = null;
+  for (let r = 2; r < raw.length; r++) {
+    const cellVal = raw[r][itemColIdx];
+    if (!cellVal) continue;
+    if (String(cellVal).split('\n').map(s => s.trim()).includes(itemNum)) { modelRow = raw[r]; break; }
+  }
+  if (!modelRow) throw new Error(`Model not found: ${itemNum}`);
+  return { raw, row1, row2, modelRow, hasSeriesCol, statusColIdx };
+}
+
+function buildCompareDoc(items) {
+  // Collect all data
+  const models = items.map(item => getModelData(item));
+  const { raw, row1, row2 } = models[0];
+
+  const SKIP_CATS = new Set(['IFP Product Line','VPC Product Line','PEN Product Line',
+    'STND Product Line','WMK Product Line','SEN Product Line','VIS Product Line',
+    'Wi-Fi Product Line','IOB Product Line']);
+  const SKIP_SUBS = new Set(['Item Number','Status','Series']);
+
+  // Build merged section structure
+  const sections = {};
+  const sectionOrder = [];
+  let currentCat = null;
+
+  for (let c = 0; c < row1.length; c++) {
+    const cat = row1[c];
+    const sub = row2[c];
+    if (cat && typeof cat === 'string' && cat.trim() && !SKIP_CATS.has(cat.trim())) {
+      const normalized = normalizeCat(cat.trim());
+      if (normalized !== currentCat) {
+        currentCat = normalized;
+        if (!sections[currentCat]) { sections[currentCat] = []; sectionOrder.push(currentCat); }
+      }
+    }
+    if (!currentCat) continue;
+    if (!sub || typeof sub !== 'string' || SKIP_SUBS.has(sub.trim())) continue;
+
+    // Collect value from each model
+    const vals = models.map(m => {
+      const v = m.modelRow[c];
+      return (v !== null && v !== undefined) ? String(v).trim() : '';
+    });
+
+    // Skip if ALL models have empty value
+    if (vals.every(v => !v || v === 'null' || v === 'N/A')) continue;
+
+    if (!sections[currentCat]) { sections[currentCat] = []; sectionOrder.push(currentCat); }
+    sections[currentCat].push({ key: sub.trim(), vals });
+  }
+
+  // Build DOM
+  const doc = document.createElement('div');
+  doc.className = 'psr-doc';
+  doc.id = 'psrDocument';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'doc-header';
+  hdr.style.flexDirection = 'column';
+  hdr.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%">
+      <div>
+        <div class="doc-title">ViewSonic</div>
+        <div class="doc-meta" contenteditable="true" title="Click to edit" style="margin-top:6px;font-size:13px;font-weight:700;color:rgba(255,255,255,0.85);cursor:text;outline:none">Product Comparison Spec Sheet</div>
+      </div>
+      <div class="doc-header-right">
+        <div contenteditable="true" class="confidential-badge" title="Click to edit">CONFIDENTIAL</div>
+      </div>
+    </div>`;
+  doc.appendChild(hdr);
+
+  // Product info panel (single, unchanged)
+  const infoPanel = document.createElement('div');
+  infoPanel.className = 'product-info-panel';
+  infoPanel.innerHTML = `
+    <div class="info-panel-title">📋 Product Info</div>
+    <div class="info-grid">
+      <div class="info-field"><label>Model Name</label><input type="text" id="pi_modelname" value="${items[0]}"></div>
+      <div class="info-field"><label>Model No.</label><input type="text" id="pi_modelno" placeholder=""></div>
+      <div class="info-field"><label>Status</label>
+        <select id="pi_status"><option value="">— Select —</option><option>Draft</option><option>Preliminary</option><option>Released</option></select>
+      </div>
+      <div class="info-field"><label>Version</label><input type="text" id="pi_version" placeholder="e.g. 1.0"></div>
+      <div class="info-field"><label>Date</label><input type="date" id="pi_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="info-field"><label>Product Type</label><input type="text" id="pi_type" placeholder="e.g. Interactive Display"></div>
+      <div class="info-field" style="grid-column:span 2"><label>PSR Link</label><input type="text" id="pi_link" placeholder="https://..."></div>
+    </div>
+    <div class="info-panel-title" style="margin-top:4px">🌟 Product Advantages</div>
+    <div class="advantages-grid">
+      <div class="advantage-field"><label>Highlight</label><textarea id="pa_highlight" placeholder="Key highlights..."></textarea></div>
+      <div class="advantage-field"><label>Basics</label><textarea id="pa_basics" placeholder="Basic advantages..."></textarea></div>
+      <div class="advantage-field"><label>Advanced</label><textarea id="pa_advanced" placeholder="Advanced features..."></textarea></div>
+    </div>`;
+  doc.appendChild(infoPanel);
+
+  const body = document.createElement('div');
+  body.className = 'doc-body';
+
+  // ── Sticky column header ──
+  const colHeader = document.createElement('div');
+  colHeader.className = 'compare-col-header';
+  colHeader.id = 'compareColHeader';
+
+  const keyLabel = document.createElement('div');
+  keyLabel.className = 'cch-key';
+  keyLabel.textContent = 'Specification';
+  colHeader.appendChild(keyLabel);
+
+  items.forEach((item, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'cch-model';
+    cell.innerHTML = `<span class="cch-num">Model ${i + 1}</span><span class="cch-name" contenteditable="true" spellcheck="false">${item}</span>`;
+    colHeader.appendChild(cell);
+  });
+
+  body.appendChild(colHeader);
+
+  sectionOrder.forEach(cat => {
+    const rows = sections[cat];
+    if (!rows || !rows.length) return;
+
+    const section = document.createElement('div');
+    section.className = 'spec-section';
+
+    const secHeader = document.createElement('div');
+    secHeader.className = 'section-header';
+    secHeader.innerHTML = `
+      <h3>${cat}</h3>
+      <div class="section-controls">
+        <button class="btn btn-default" style="padding:2px 8px;font-size:10px;border-radius:3px" onclick="event.stopPropagation();showAddRowModal('${cat.replace(/'/g,"\\'")}', ${items.length})">+ Add Row</button>
+        <button class="btn btn-default" style="padding:2px 8px;font-size:10px;border-radius:3px" onclick="event.stopPropagation();showRenameSectionModal(this)">✏️ Rename</button>
+        <button class="btn btn-red" style="padding:2px 8px;font-size:10px;border-radius:3px" onclick="event.stopPropagation();deleteSection(this)">🗑 Delete</button>
+        <div class="section-toggle">▼</div>
+      </div>`;
+    secHeader.onclick = (e) => {
+      if (e.target.closest('.section-controls button')) return;
+      const table = section.querySelector('.spec-table');
+      const toggle = secHeader.querySelector('.section-toggle');
+      table.classList.toggle('hidden');
+      toggle.classList.toggle('collapsed');
+    };
+    section.appendChild(secHeader);
+
+    const table = document.createElement('div');
+    table.className = 'spec-table';
+    table.dataset.section = cat;
+    table.dataset.compareCount = items.length;
+
+    rows.forEach(({ key, vals }) => {
+      table.appendChild(makeCompareRow(key, vals));
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-row-btn';
+    addBtn.innerHTML = '＋ Add Spec Row';
+    addBtn.onclick = () => showAddRowModal(cat, items.length);
+    table.appendChild(addBtn);
+
+    section.appendChild(table);
+    body.appendChild(section);
+  });
+
+  doc.appendChild(body);
+  return doc;
+}
+
+function makeCompareRow(key, vals) {
+  const row = document.createElement('div');
+  row.className = 'spec-row';
+
+  // Detect diff: any value differs from the first non-empty value
+  const nonEmpty = vals.filter(v => v);
+  const hasDiff = nonEmpty.length > 1 && nonEmpty.some(v => v !== nonEmpty[0]);
+  if (hasDiff) row.classList.add('diff-row');
+
+  const keyCell = document.createElement('div');
+  keyCell.className = 'spec-key';
+  keyCell.textContent = key;
+  row.appendChild(keyCell);
+
+  vals.forEach((val, i) => {
+    const valCell = document.createElement('div');
+    valCell.className = 'spec-value';
+    valCell.style.borderLeft = '1px solid #eee';
+    if (hasDiff && val) valCell.style.background = '#fffbe6';
+    valCell.textContent = val || '—';
+
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+    if (i === vals.length - 1) {
+      actions.innerHTML = `<button class="row-action-btn btn-hide-row" title="Hide this row" onclick="toggleRowHide(this)">🚫</button>`;
+    }
+    valCell.appendChild(actions);
+    row.appendChild(valCell);
+  });
+
+  return row;
+}
+
+function buildPSRDoc(itemNum) {
+  const ws = workbook.Sheets[currentTab];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  // Get header rows
+  const row1 = raw[0] || [];
+  const row2 = raw[1] || [];
+
+  // Determine item col index: IFP/VPC use col1, others use col0
+  const hasSeriesCol = ['IFP','VPC'].includes(currentTab);
+  const itemColIdx = hasSeriesCol ? 1 : 0;
+  const statusColIdx = hasSeriesCol ? 2 : 1;
+
+  // Find model row (handle multiline item numbers)
+  let modelRow = null;
+  for (let r = 2; r < raw.length; r++) {
+    const cellVal = raw[r][itemColIdx];
+    if (!cellVal) continue;
+    const rowItems = String(cellVal).split('\n').map(s => s.trim());
+    if (rowItems.includes(itemNum)) { modelRow = raw[r]; break; }
+  }
+  if (!modelRow) throw new Error(`找不到型號 ${itemNum}`);
+
+  const status = modelRow[statusColIdx] || '';
+  const series = hasSeriesCol ? (modelRow[0] || '') : '';
+
+  // Build sections — fix: carry forward last valid category across null cells
+  const sections = {};
+  const sectionOrder = [];
+  let currentCat = null;
+
+  // Skip product-line title column (col 0 for IFP/VPC)
+  const SKIP_CATS = new Set(['IFP Product Line','VPC Product Line','PEN Product Line',
+    'STND Product Line','WMK Product Line','SEN Product Line','VIS Product Line',
+    'Wi-Fi Product Line','IOB Product Line']);
+  const SKIP_SUBS = new Set(['Item Number','Status','Series']);
+
+  for (let c = 0; c < row1.length; c++) {
+    const cat = row1[c];
+    const sub = row2[c];
+    const val = modelRow[c];
+
+    // Update current category when we see a non-null, non-title category
+    if (cat && typeof cat === 'string' && cat.trim()) {
+      const trimmed = cat.trim();
+      if (!SKIP_CATS.has(trimmed)) {
+        const normalized = normalizeCat(trimmed);
+        if (normalized !== currentCat) {
+          currentCat = normalized;
+          if (!sections[currentCat]) { sections[currentCat] = []; sectionOrder.push(currentCat); }
+        }
+      }
+    }
+
+    if (!currentCat) continue;
+    if (!sub || typeof sub !== 'string' || SKIP_SUBS.has(sub.trim())) continue;
+
+    const valStr = (val !== null && val !== undefined) ? String(val).trim() : '';
+    if (!valStr || valStr === 'null' || valStr === 'N/A') continue;
+
+    if (!sections[currentCat]) { sections[currentCat] = []; sectionOrder.push(currentCat); }
+    sections[currentCat].push({ key: sub.trim(), value: valStr });
+  }
+
+  // Build DOM
+  const doc = document.createElement('div');
+  doc.className = 'psr-doc';
+  doc.id = 'psrDocument';
+
+  // ── Header ──
+  const hdr = document.createElement('div');
+  hdr.className = 'doc-header';
+  hdr.innerHTML = `
+    <div style="flex:1">
+      <div class="doc-title">ViewSonic</div>
+      <div class="doc-meta" contenteditable="true" title="點擊可編輯整行" style="margin-top:6px;font-size:13px;font-weight:700;color:rgba(255,255,255,0.85);cursor:text;outline:none;letter-spacing:0.01em">Product Specification:&nbsp;&nbsp;${itemNum}</div>
+    </div>
+    <div class="doc-header-right">
+      <div contenteditable="true" class="confidential-badge" title="點擊可編輯">CONFIDENTIAL</div>
+    </div>`;
+  doc.appendChild(hdr);
+
+  // ── Product Info Panel ──
+  const infoPanel = document.createElement('div');
+  infoPanel.className = 'product-info-panel';
+  infoPanel.innerHTML = `
+    <div class="info-panel-title">📋 Product Info</div>
+    <div class="info-grid">
+      <div class="info-field"><label>Model Name</label><input type="text" id="pi_modelname" value="${itemNum}"></div>
+      <div class="info-field"><label>Model No.</label><input type="text" id="pi_modelno" placeholder=""></div>
+      <div class="info-field"><label>Status</label>
+        <select id="pi_status">
+          <option value="">— Select —</option>
+          <option value="Draft" ${status==='Draft'?'selected':''}>Draft</option>
+          <option value="Preliminary">Preliminary</option>
+          <option value="Released">Released</option>
+        </select>
+      </div>
+      <div class="info-field"><label>Version</label><input type="text" id="pi_version" placeholder="e.g. 1.0"></div>
+      <div class="info-field"><label>Date</label><input type="date" id="pi_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="info-field"><label>Product Type</label><input type="text" id="pi_type" placeholder="e.g. Interactive Display"></div>
+      <div class="info-field" style="grid-column:span 2"><label>PSR Link</label><input type="text" id="pi_link" placeholder="https://..."></div>
+    </div>
+    <div class="info-panel-title" style="margin-top:4px">🌟 Product Advantages</div>
+    <div class="advantages-grid">
+      <div class="advantage-field"><label>Highlight</label><textarea id="pa_highlight" placeholder="Key highlights..."></textarea></div>
+      <div class="advantage-field"><label>Basics</label><textarea id="pa_basics" placeholder="Basic advantages..."></textarea></div>
+      <div class="advantage-field"><label>Advanced</label><textarea id="pa_advanced" placeholder="Advanced features..."></textarea></div>
+    </div>`;
+  doc.appendChild(infoPanel);
+
+  const body = document.createElement('div');
+  body.className = 'doc-body';
+
+  sectionOrder.forEach(cat => {
+    const rows = sections[cat];
+    if (!rows || !rows.length) return;
+    const section = document.createElement('div');
+    section.className = 'spec-section';
+
+    const secHeader = document.createElement('div');
+    secHeader.className = 'section-header';
+    secHeader.innerHTML = `
+      <h3>${cat}</h3>
+      <div class="section-controls">
+        <button class="btn btn-default" style="padding:2px 8px;font-size:10px;border-radius:3px" onclick="event.stopPropagation();showAddRowModal('${cat.replace(/'/g,"\\'")}')">+ Add Row</button>
+        <button class="btn btn-default" style="padding:2px 8px;font-size:10px;border-radius:3px" onclick="event.stopPropagation();showRenameSectionModal(this)">✏️ Rename</button>
+        <button class="btn btn-red" style="padding:2px 8px;font-size:10px;border-radius:3px" onclick="event.stopPropagation();deleteSection(this)">🗑 Delete</button>
+        <div class="section-toggle">▼</div>
+      </div>`;
+    secHeader.onclick = (e) => {
+      if (e.target.closest('.section-controls button')) return;
+      const table = section.querySelector('.spec-table');
+      const toggle = secHeader.querySelector('.section-toggle');
+      table.classList.toggle('hidden');
+      toggle.classList.toggle('collapsed');
+    };
+    section.appendChild(secHeader);
+
+    const table = document.createElement('div');
+    table.className = 'spec-table';
+    table.dataset.section = cat;
+
+    rows.forEach(({ key, value }) => {
+      table.appendChild(makeSpecRow(key, value));
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-row-btn';
+    addBtn.innerHTML = '＋ Add Spec Row';
+    addBtn.onclick = () => showAddRowModal(cat);
+    table.appendChild(addBtn);
+
+    section.appendChild(table);
+    body.appendChild(section);
+  });
+
+  doc.appendChild(body);
+  return doc;
+}
+
+function makeSpecRow(key, value) {
+  const row = document.createElement('div');
+  row.className = 'spec-row';
+
+  const keyCell = document.createElement('div');
+  keyCell.className = 'spec-key';
+  keyCell.textContent = key;
+
+  const valCell = document.createElement('div');
+  valCell.className = 'spec-value';
+  valCell.textContent = value;
+
+  const actions = document.createElement('div');
+  actions.className = 'row-actions';
+  actions.innerHTML = `<button class="row-action-btn btn-hide-row" title="Hide this row" onclick="toggleRowHide(this)">🚫</button>`;
+
+  valCell.appendChild(actions);
+  row.appendChild(keyCell);
+  row.appendChild(valCell);
+  return row;
+}
+
+function normalizeCat(raw) {
+  const t = raw.trim();
+  // Expand known truncated Excel column headers back to full English names
+  const map = [
+    [/^INPUT$/i,        'Input'],
+    [/^Physi/i,         'Physical Characteristics'],
+    [/^Envir/i,         'Environmental Limits'],
+    [/^Pack/i,          'Package Contents'],
+    [/^Compa/i,         'Compatibility'],
+    [/^Special/i,       'Special Features'],
+  ];
+  for (const [re, label] of map) {
+    if (re.test(t)) return label;
+  }
+  return t;
+}
+
+// ── EDIT MODE ──
+function toggleEdit() {
+  editMode = !editMode;
+  const btn = document.getElementById('btnToggleEdit');
+  const toolbar = document.getElementById('editToolbar');
+
+  // Product Spec cells
+  document.querySelectorAll('.spec-value').forEach(cell => {
+    cell.contentEditable = editMode ? 'true' : 'false';
+  });
+  document.querySelectorAll('.spec-key').forEach(cell => {
+    cell.contentEditable = editMode ? 'true' : 'false';
+    cell.style.cursor = editMode ? 'text' : '';
+  });
+  // Logistic cells
+  document.querySelectorAll('.lc-val, .lc-key').forEach(cell => {
+    cell.contentEditable = editMode ? 'true' : 'false';
+    cell.style.cursor = editMode ? 'text' : '';
+  });
+  // Compliance cells (skip header th cells and item number column)
+  document.querySelectorAll('.compliance-table tbody td:not(.td-item)').forEach(cell => {
+    cell.contentEditable = editMode ? 'true' : 'false';
+  });
+
+  if (editMode) {
+    btn.textContent = '✅ Done Editing';
+    btn.classList.add('btn-accent');
+    btn.classList.remove('btn-default');
+    toolbar.classList.add('visible');
+  } else {
+    btn.textContent = '✏️ Edit Mode';
+    btn.classList.remove('btn-accent');
+    btn.classList.add('btn-default');
+    toolbar.classList.remove('visible');
+    showToast('✓ Changes saved (local)', 'success');
+  }
+}
+
+function toggleRowHide(btn) {
+  const row = btn.closest('.spec-row');
+  row.classList.toggle('row-hidden');
+}
+
+// ── SECTIONS ──
+function toggleAllSections() {
+  allSectionsOpen = !allSectionsOpen;
+  document.querySelectorAll('.spec-table').forEach(t => {
+    if (allSectionsOpen) t.classList.remove('hidden');
+    else t.classList.add('hidden');
+  });
+  document.querySelectorAll('.section-toggle').forEach(t => {
+    t.classList.toggle('collapsed', !allSectionsOpen);
+  });
+}
+
+// ── ADD ROW MODAL ──
+let pendingCompareCount = 1;
+function showAddRowModal(section, compareCount = 1) {
+  pendingSection = section;
+  pendingCompareCount = compareCount;
+  document.getElementById('newRowKey').value = '';
+
+  // Build value input fields based on compare count
+  const container = document.getElementById('newRowValueFields');
+  const desc = document.getElementById('addRowModalDesc');
+
+  if (compareCount > 1) {
+    // Read current model names from column header
+    const modelNames = [...document.querySelectorAll('.cch-name')].map(el => el.textContent.trim());
+    desc.textContent = `Fill in values for each model (leave blank for —)`;
+    container.innerHTML = modelNames.map((name, i) =>
+      `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);width:110px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${name}">${name}</span>
+        <input type="text" id="newRowValue_${i}" placeholder="Value for ${name}" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:5px;font-family:var(--sans);font-size:13px;outline:none">
+      </div>`
+    ).join('');
+    // Enter on last field confirms
+    const lastInput = container.querySelector(`#newRowValue_${compareCount - 1}`);
+    if (lastInput) lastInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmAddRow(); });
+  } else {
+    desc.textContent = 'Add a custom spec field to this section';
+    container.innerHTML = `<input type="text" id="newRowValue_0" placeholder="Spec value (e.g. TBD)" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:5px;font-family:var(--sans);font-size:13px;outline:none;margin-bottom:10px">`;
+    container.querySelector('#newRowValue_0').addEventListener('keydown', e => { if (e.key === 'Enter') confirmAddRow(); });
+  }
+
+  document.getElementById('addRowModal').classList.add('open');
+  setTimeout(() => document.getElementById('newRowKey').focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('addRowModal').classList.remove('open');
+  pendingSection = null;
+}
+
+function confirmAddRow() {
+  const key = document.getElementById('newRowKey').value.trim();
+  if (!key) { showToast('Please enter a spec name', 'error'); return; }
+
+  // Collect all value inputs
+  const valueInputs = document.querySelectorAll('[id^="newRowValue_"]');
+  const values = [...valueInputs].map(inp => inp.value.trim() || '—');
+
+  const tables = document.querySelectorAll('.spec-table');
+  let targetTable = null;
+  tables.forEach(t => { if (t.dataset.section === pendingSection) targetTable = t; });
+
+  if (targetTable) {
+    const addBtn = targetTable.querySelector('.add-row-btn');
+    const cmpCount = parseInt(targetTable.dataset.compareCount || '1');
+    let newRow;
+    if (cmpCount > 1) {
+      newRow = makeCompareRow(key, values);
+    } else {
+      newRow = makeSpecRow(key, values[0] || '—');
+    }
+    if (editMode) newRow.querySelectorAll('.spec-value').forEach(c => c.contentEditable = 'true');
+    targetTable.insertBefore(newRow, addBtn);
+    showToast(`✓ Row "${key}" added`, 'success');
+  }
+  closeModal();
+}
+
+function exportWord() {
+  if (typeof docx === 'undefined') {
+    showToast('docx_lib.js not found — place it in the same folder as this HTML file', 'error');
+    return;
+  }
+  if (!document.getElementById('psrDocument')) {
+    showToast('Please generate a spec sheet first', 'error');
+    return;
+  }
+  showLoading('Generating Word document...');
+
+  setTimeout(async () => {
+    try {
+      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+              WidthType, ShadingType, VerticalAlign, BorderStyle, AlignmentType,
+              PageOrientation } = docx;
+
+      // ── helpers ──
+      const FONT = 'Arial';
+      const border = { style: BorderStyle.SINGLE, size: 4, color: 'DDDDDD' };
+      const borders = { top: border, bottom: border, left: border, right: border };
+      const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+      const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideH: noBorder, insideV: noBorder };
+      const cm = { top: 60, bottom: 60, left: 100, right: 100 };
+
+      // Turn a multiline string into an array of Paragraphs (one per line)
+      function textParas(text, opts = {}) {
+        const { bold = false, color = '000000', size = 17 } = opts;
+        const lines = String(text || '').split('\n');
+        return lines.map(line => new Paragraph({
+          spacing: { before: 0, after: 0 },
+          children: [new TextRun({ text: line, bold, color, size, font: FONT })]
+        }));
+      }
+
+      // ── collect data from DOM ──
+      const piFields = [
+        ['Model Name',   document.getElementById('pi_modelname')?.value || ''],
+        ['Model No.',    document.getElementById('pi_modelno')?.value || ''],
+        ['Status',       document.getElementById('pi_status')?.value || ''],
+        ['Version',      document.getElementById('pi_version')?.value || ''],
+        ['Date',         document.getElementById('pi_date')?.value || ''],
+        ['Product Type', document.getElementById('pi_type')?.value || ''],
+        ['PSR Link',     document.getElementById('pi_link')?.value || ''],
+      ].filter(([,v]) => v.trim());
+
+      const paFields = [
+        ['Highlight', document.getElementById('pa_highlight')?.value || ''],
+        ['Basics',    document.getElementById('pa_basics')?.value || ''],
+        ['Advanced',  document.getElementById('pa_advanced')?.value || ''],
+      ].filter(([,v]) => v.trim());
+
+      const confText = document.querySelector('.confidential-badge')?.textContent?.trim() || 'CONFIDENTIAL';
+      // For compare mode, read the editable model names from column header
+      const cchNames = [...document.querySelectorAll('.cch-name')].map(el => el.textContent.trim());
+      const subtitle = document.querySelector('.doc-meta[contenteditable]')?.textContent?.trim() ||
+        (compareMode ? 'Product Comparison Spec Sheet' : `Product Specification:  ${currentModel}`);
+
+      // Content width at 1.27cm margins: A3 landscape 23811 - 720*2 = 22371 DXA
+      const TOTAL_W = 22371;
+      const KEY_W   = 3500;
+      const VAL_W   = TOTAL_W - KEY_W; // 18871 (A3 landscape)
+
+      // ── header table ──
+      const headerTable = new Table({
+        width: { size: TOTAL_W, type: WidthType.DXA },
+        columnWidths: [TOTAL_W - 2400, 2400],
+        borders: noBorders,
+        rows: [new TableRow({ children: [
+          new TableCell({
+            borders: noBorders,
+            width: { size: TOTAL_W - 2400, type: WidthType.DXA },
+            shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 140, bottom: 140, left: 200, right: 200 },
+            children: [
+              new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: 'ViewSonic', bold: true, color: 'FFFFFF', size: 44, font: FONT })] }),
+              new Paragraph({ spacing: { before: 40, after: 0 }, children: [new TextRun({ text: subtitle, bold: true, color: 'CCE0FF', size: 21, font: FONT })] }),
+            ]
+          }),
+          new TableCell({
+            borders: noBorders,
+            width: { size: 2400, type: WidthType.DXA },
+            shading: { fill: 'CC2200', type: ShadingType.CLEAR },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 100, bottom: 100, left: 120, right: 120 },
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0 }, children: [new TextRun({ text: confText, bold: true, color: 'FFFFFF', size: 18, font: FONT })] })]
+          }),
+        ]})]
+      });
+
+      // ── spec table builder (supports 1 value col or N value cols) ──
+      function makeTable(rowDefs, numValCols = 1) {
+        const valColW = Math.floor(VAL_W / numValCols);
+        const colWidths = [KEY_W, ...Array(numValCols).fill(valColW)];
+        const totalCols = 1 + numValCols;
+
+        return new Table({
+          width: { size: TOTAL_W, type: WidthType.DXA },
+          columnWidths: colWidths,
+          borders: { top: border, bottom: border, left: border, right: border, insideH: border, insideV: border },
+          rows: rowDefs.map(({ key, value, vals, isHeader, isModelHeader }) => {
+
+            // Model name header row (dark blue, one cell per column)
+            if (isModelHeader) {
+              const keyCellMH = new TableCell({
+                borders, margins: cm,
+                width: { size: KEY_W, type: WidthType.DXA },
+                shading: { fill: '162D4A', type: ShadingType.CLEAR },
+                verticalAlign: VerticalAlign.CENTER,
+                children: [new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: key, bold: true, color: 'AABBCC', size: 15, font: FONT })] })]
+              });
+              const valCellsMH = (vals || []).map((v, i) => new TableCell({
+                borders, margins: cm,
+                width: { size: valColW, type: WidthType.DXA },
+                shading: { fill: '162D4A', type: ShadingType.CLEAR },
+                verticalAlign: VerticalAlign.CENTER,
+                children: [
+                  new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: `Model ${i+1}`, color: '8899AA', size: 13, font: FONT })] }),
+                  new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: v, bold: true, color: 'FFFFFF', size: 17, font: FONT })] }),
+                ]
+              }));
+              return new TableRow({ children: [keyCellMH, ...valCellsMH] });
+            }
+
+            // Section header row (spans all columns)
+            if (isHeader) {
+              return new TableRow({ children: [
+                new TableCell({
+                  columnSpan: totalCols,
+                  borders, margins: cm,
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  verticalAlign: VerticalAlign.CENTER,
+                  children: [new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: key, bold: true, color: 'FFFFFF', size: 19, font: FONT })] })]
+                })
+              ]});
+            }
+
+            // Normal data row — use vals[] if provided, else single value
+            const rowVals = vals || (value !== undefined ? [value] : ['']);
+            const keyCell = new TableCell({
+              borders, margins: cm,
+              width: { size: KEY_W, type: WidthType.DXA },
+              shading: { fill: 'FAFAFA', type: ShadingType.CLEAR },
+              verticalAlign: VerticalAlign.CENTER,
+              children: textParas(key, { bold: true, color: '444444', size: 17 })
+            });
+            const valCells = rowVals.map(v => new TableCell({
+              borders, margins: cm,
+              width: { size: valColW, type: WidthType.DXA },
+              verticalAlign: VerticalAlign.CENTER,
+              children: textParas(v, { size: 17 })
+            }));
+            return new TableRow({ children: [keyCell, ...valCells] });
+          })
+        });
+      }
+
+      function sectionLabel(text) {
+        return new Paragraph({
+          spacing: { before: 160, after: 60 },
+          children: [new TextRun({ text: text.toUpperCase(), bold: true, color: '1E3A5F', size: 16, font: FONT })]
+        });
+      }
+
+      const children = [headerTable, new Paragraph({ spacing: { before: 0, after: 0 }, children: [] })];
+
+      if (piFields.length) {
+        children.push(sectionLabel('Product Info'));
+        children.push(makeTable(piFields.map(([k,v]) => ({ key: k, value: v }))));
+      }
+      if (paFields.length) {
+        children.push(sectionLabel('Product Advantages'));
+        children.push(makeTable(paFields.map(([k,v]) => ({ key: k, value: v }))));
+      }
+
+      // Detect compare mode from DOM
+      const isCompare = compareMode && compareList.length >= 2;
+      const numValCols = isCompare ? compareList.length : 1;
+
+      // Spec sections — build rows
+      const specRowDefs = [];
+      if (isCompare && cchNames.length >= 2) {
+        specRowDefs.push({ key: 'Specification', vals: cchNames, isModelHeader: true });
+      }
+
+      document.querySelectorAll('.spec-section').forEach(section => {
+        const cat = section.querySelector('h3').textContent.trim();
+        const visibleRows = [...section.querySelectorAll('.spec-row:not(.row-hidden)')];
+        if (!visibleRows.length) return;
+        specRowDefs.push({ key: cat, isHeader: true });
+        visibleRows.forEach(r => {
+          const key = r.querySelector('.spec-key').innerText.trim();
+          const valCells = [...r.querySelectorAll('.spec-value')];
+          if (isCompare) {
+            // Each .spec-value is one model's column — pass as vals array
+            const vals = valCells.map(c => c.innerText.replace(/🚫/g,'').trim());
+            specRowDefs.push({ key, vals });
+          } else {
+            const val = valCells[0]?.innerText.replace(/🚫/g,'').trim() || '';
+            specRowDefs.push({ key, value: val });
+          }
+        });
+      });
+
+      if (specRowDefs.length) {
+        children.push(sectionLabel('Specifications'));
+        children.push(makeTable(specRowDefs, numValCols));
+      }
+
+      const docLabel = isCompare ? compareList.join('_vs_') : (currentModel || 'export');
+      const document_ = new Document({
+        sections: [{
+          properties: {
+            page: {
+              size: { width: 16838, height: 23811, orientation: PageOrientation.LANDSCAPE },
+              margin: { top: 720, right: 720, bottom: 720, left: 720 }
+            }
+          },
+          children
+        }]
+      });
+
+      const blob = await Packer.toBlob(document_);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PSR_${docLabel}_${new Date().toISOString().slice(0,10)}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      hideLoading();
+      showToast('✓ Word document downloaded', 'success');
+    } catch (err) {
+      hideLoading();
+      showToast('Export failed: ' + err.message, 'error');
+      console.error(err);
+    }
+  }, 100);
+}
+
+// ── RENAME / DELETE SECTION ──
+let pendingRenameHeader = null;
+
+function showRenameSectionModal(btn) {
+  const secHeader = btn.closest('.section-header');
+  pendingRenameHeader = secHeader;
+  const currentName = secHeader.querySelector('h3').textContent;
+  document.getElementById('renameSectionInput').value = currentName;
+  document.getElementById('renameSectionModal').classList.add('open');
+  setTimeout(() => {
+    const inp = document.getElementById('renameSectionInput');
+    inp.focus(); inp.select();
+  }, 100);
+}
+
+function closeRenameModal() {
+  document.getElementById('renameSectionModal').classList.remove('open');
+  pendingRenameHeader = null;
+}
+
+function confirmRenameSection() {
+  const newName = document.getElementById('renameSectionInput').value.trim();
+  if (!newName) { showToast('Please enter a section name', 'error'); return; }
+  if (pendingRenameHeader) {
+    pendingRenameHeader.querySelector('h3').textContent = newName;
+    const table = pendingRenameHeader.closest('.spec-section').querySelector('.spec-table');
+    if (table) table.dataset.section = newName;
+    showToast(`✓ Section renamed to "${newName}"`, 'success');
+  }
+  closeRenameModal();
+}
+
+function deleteSection(btn) {
+  const section = btn.closest('.spec-section');
+  const name = section.querySelector('h3').textContent;
+  if (confirm(`Delete section "${name}" and all its rows?`)) {
+    section.remove();
+    showToast(`Section "${name}" deleted`, 'info');
+  }
+}
+
+// ── UI HELPERS ──
+function showLoading(text) {
+  document.getElementById('loadingText').textContent = text || '處理中...';
+  document.getElementById('loadingOverlay').classList.add('open');
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('open');
+}
+
+let toastTimer;
+function showToast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast toast-${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Close modals on overlay click
+document.getElementById('addRowModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('addRowModal')) closeModal();
+});
+document.getElementById('renameSectionModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('renameSectionModal')) closeRenameModal();
+});
+
+document.getElementById('renameSectionInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmRenameSection();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModal(); closeRenameModal(); }
+});
+</script>
+</body>
+</html>

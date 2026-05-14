@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PSR 產品規格書產生器</title>
+<title>PSR Converter</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="docx_lib.js"></script>
 <style>
@@ -1231,7 +1231,7 @@
 <header>
   <div class="logo">PSR</div>
   <h1>Product Spec Sheet Generator</h1>
-  <div class="header-version">v1.3 · EDU Product Line · Developed by Ted Wang</div>
+  <div class="header-version">v1.4 · EDU Product Line · Developed by Ted Wang</div>
 </header>
 
 <div class="app">
@@ -1739,14 +1739,17 @@ function buildLogisticDoc(items) {
       <div class="lc-title">ViewSonic</div>
       <div class="lc-subtitle" contenteditable="true" style="outline:none;cursor:text">Logistic Information</div>
     </div>
-    <div style="text-align:right">
-      <div class="lc-type">Item${items.length > 1 ? 's' : ''}</div>
-      <div class="lc-item" style="font-size:${items.length > 2 ? '11px' : '14px'}">${
-        items.map(i => {
-          const e = logisticModels.find(m => m.item === i);
-          return e && e.skus && e.skus.length > 1 ? e.skus[0] : i;
-        }).join('  ·  ')
-      }</div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+      <div contenteditable="true" class="confidential-badge" title="Click to edit">CONFIDENTIAL</div>
+      <div style="text-align:right">
+        <div class="lc-type">Item${items.length > 1 ? 's' : ''}</div>
+        <div class="lc-item" style="font-size:${items.length > 2 ? '11px' : '14px'}">${
+          items.map(i => {
+            const e = logisticModels.find(m => m.item === i);
+            return e && e.skus && e.skus.length > 1 ? e.skus[0] : i;
+          }).join('  ·  ')
+        }</div>
+      </div>
     </div>`;
   doc.appendChild(hdr);
 
@@ -1830,7 +1833,8 @@ function buildComplianceDoc(items) {
   const certCols = [];
   let curReg = '', curCty = '';
   for (let c = DATA_START; c < certRow.length; c++) {
-    if (regRow[c])  curReg = String(regRow[c]).trim();
+    // Reset region to empty when row is null (e.g. "Others" section has no region)
+    curReg = regRow[c] ? String(regRow[c]).trim() : '';
     if (ctryRow[c]) curCty = String(ctryRow[c]).trim();
     const cert = certRow[c];
     const vm   = vmRow[c] || '';
@@ -1856,9 +1860,12 @@ function buildComplianceDoc(items) {
       <div class="lc-title">ViewSonic</div>
       <div class="lc-subtitle" contenteditable="true" style="outline:none;cursor:text" title="Click to edit">Compliance Certification Matrix</div>
     </div>
-    <div style="text-align:right">
-      <div class="lc-type">Item${items.length > 1 ? 's' : ''}</div>
-      <div class="lc-item" style="font-size:${items.length > 2 ? '11px' : '14px'}">${items.join('  ·  ')}</div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+      <div contenteditable="true" class="confidential-badge" title="Click to edit">CONFIDENTIAL</div>
+      <div style="text-align:right">
+        <div class="lc-type">Item${items.length > 1 ? 's' : ''}</div>
+        <div class="lc-item" style="font-size:${items.length > 2 ? '11px' : '14px'}">${items.join('  ·  ')}</div>
+      </div>
     </div>`;
   doc.appendChild(hdr);
 
@@ -2725,7 +2732,7 @@ function exportWord() {
     showToast('docx_lib.js not found — place it in the same folder as this HTML file', 'error');
     return;
   }
-  if (!document.getElementById('psrDocument')) {
+  if (!document.getElementById('psrDocument') && !document.querySelector('.lc-doc')) {
     showToast('Please generate a spec sheet first', 'error');
     return;
   }
@@ -2737,25 +2744,257 @@ function exportWord() {
               WidthType, ShadingType, VerticalAlign, BorderStyle, AlignmentType,
               PageOrientation } = docx;
 
-      // ── helpers ──
       const FONT = 'Arial';
-      const border = { style: BorderStyle.SINGLE, size: 4, color: 'DDDDDD' };
-      const borders = { top: border, bottom: border, left: border, right: border };
-      const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+      const border    = { style: BorderStyle.SINGLE, size: 4, color: 'DDDDDD' };
+      const borders   = { top: border, bottom: border, left: border, right: border, insideH: border, insideV: border };
+      const noBorder  = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
       const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideH: noBorder, insideV: noBorder };
       const cm = { top: 60, bottom: 60, left: 100, right: 100 };
+      const TOTAL_W = 22371;  // A3 landscape content width (1.27cm margins)
+      const KEY_W   = 3500;
+      const VAL_W   = TOTAL_W - KEY_W;
 
-      // Turn a multiline string into an array of Paragraphs (one per line)
+      // ── shared helpers ──
       function textParas(text, opts = {}) {
         const { bold = false, color = '000000', size = 17 } = opts;
-        const lines = String(text || '').split('\n');
-        return lines.map(line => new Paragraph({
-          spacing: { before: 0, after: 0 },
-          children: [new TextRun({ text: line, bold, color, size, font: FONT })]
-        }));
+        return String(text || '').split('\n').map(line =>
+          new Paragraph({ spacing: { before: 0, after: 0 },
+            children: [new TextRun({ text: line, bold, color, size, font: FONT })] }));
       }
 
-      // ── collect data from DOM ──
+      function cleanNum(v) {
+        // Round ugly floats like 98.70472440944881 → 98.70
+        if (!v || v === '—') return v;
+        const n = parseFloat(v);
+        if (!isNaN(n) && String(v).replace(/[^.]/g,'').length === 1 && String(v).replace(/[^0-9]/g,'').length > 8)
+          return String(Math.round(n * 100) / 100);
+        return v;
+      }
+
+      function sectionLabel(text) {
+        return new Paragraph({ spacing: { before: 160, after: 60 },
+          children: [new TextRun({ text: String(text).toUpperCase(), bold: true, color: '1E3A5F', size: 16, font: FONT })] });
+      }
+
+      function makeHeaderTable(titleLine1, titleLine2, itemLine, confText) {
+        return new Table({
+          width: { size: TOTAL_W, type: WidthType.DXA },
+          columnWidths: [TOTAL_W - 2400, 2400],
+          borders: noBorders,
+          rows: [new TableRow({ children: [
+            new TableCell({
+              borders: noBorders, width: { size: TOTAL_W - 2400, type: WidthType.DXA },
+              shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+              verticalAlign: VerticalAlign.CENTER,
+              margins: { top: 140, bottom: 140, left: 200, right: 200 },
+              children: [
+                new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: titleLine1, bold: true, color: 'FFFFFF', size: 44, font: FONT })] }),
+                new Paragraph({ spacing: { before: 40, after: 0 }, children: [new TextRun({ text: titleLine2, bold: true, color: 'CCE0FF', size: 21, font: FONT })] }),
+                ...(itemLine ? [new Paragraph({ spacing: { before: 30, after: 0 }, children: [new TextRun({ text: itemLine, bold: true, color: 'FFFFFF', size: 19, font: FONT })] })] : []),
+              ]
+            }),
+            new TableCell({
+              borders: noBorders, width: { size: 2400, type: WidthType.DXA },
+              shading: { fill: 'CC2200', type: ShadingType.CLEAR },
+              verticalAlign: VerticalAlign.CENTER,
+              margins: { top: 100, bottom: 100, left: 120, right: 120 },
+              children: [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0 },
+                children: [new TextRun({ text: confText || 'CONFIDENTIAL', bold: true, color: 'FFFFFF', size: 18, font: FONT })] })]
+            }),
+          ]})]
+        });
+      }
+
+      function makeTable(rowDefs, numValCols = 1) {
+        const valColW = Math.floor(VAL_W / numValCols);
+        const colWidths = [KEY_W, ...Array(numValCols).fill(valColW)];
+        return new Table({
+          width: { size: TOTAL_W, type: WidthType.DXA },
+          columnWidths: colWidths,
+          borders,
+          rows: rowDefs.map(({ key, value, vals, isHeader, isModelHeader }) => {
+            if (isModelHeader) {
+              const mVals = vals || [value || ''];
+              return new TableRow({ children: [
+                new TableCell({ borders, margins: cm, width: { size: KEY_W, type: WidthType.DXA },
+                  shading: { fill: '162D4A', type: ShadingType.CLEAR }, verticalAlign: VerticalAlign.CENTER,
+                  children: textParas(key, { bold: true, color: 'AABBCC', size: 15 }) }),
+                ...mVals.map((v, i) => new TableCell({ borders, margins: cm,
+                  width: { size: valColW, type: WidthType.DXA },
+                  shading: { fill: '162D4A', type: ShadingType.CLEAR }, verticalAlign: VerticalAlign.CENTER,
+                  children: [
+                    new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: `Model ${i+1}`, color: '8899AA', size: 13, font: FONT })] }),
+                    new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: v, bold: true, color: 'FFFFFF', size: 17, font: FONT })] }),
+                  ] }))
+              ]});
+            }
+            if (isHeader) {
+              return new TableRow({ children: [
+                new TableCell({ columnSpan: 1 + numValCols, borders, margins: cm,
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, verticalAlign: VerticalAlign.CENTER,
+                  children: textParas(key, { bold: true, color: 'FFFFFF', size: 19 }) })
+              ]});
+            }
+            const rowVals = vals || [value !== undefined ? value : ''];
+            return new TableRow({ children: [
+              new TableCell({ borders, margins: cm, width: { size: KEY_W, type: WidthType.DXA },
+                shading: { fill: 'FAFAFA', type: ShadingType.CLEAR }, verticalAlign: VerticalAlign.CENTER,
+                children: textParas(key, { bold: true, color: '444444', size: 17 }) }),
+              ...rowVals.map(v => new TableCell({ borders, margins: cm,
+                width: { size: valColW, type: WidthType.DXA }, verticalAlign: VerticalAlign.CENTER,
+                children: textParas(cleanNum(v), { size: 17 }) }))
+            ]});
+          })
+        });
+      }
+
+      const pageProps = { size: { width: 16838, height: 23811, orientation: PageOrientation.LANDSCAPE }, margin: { top: 720, right: 720, bottom: 720, left: 720 } };
+      const blankPara = new Paragraph({ spacing: { before: 0, after: 0 }, children: [] });
+
+      // ── Read editable header values from the currently displayed doc ──
+      function getLCHeaderVals(defaultSubtitle) {
+        const docEl = document.querySelector('#docContainer .lc-doc');
+        const subtitle = docEl?.querySelector('.lc-subtitle')?.innerText?.trim() || defaultSubtitle;
+        const conf     = docEl?.querySelector('.confidential-badge')?.innerText?.trim() || 'CONFIDENTIAL';
+        return { subtitle, conf };
+      }
+
+      // ════════════════════════════════
+      // ── LOGISTIC ──
+      // ════════════════════════════════
+      if (appMode === 'logistic') {
+        const { subtitle, conf } = getLCHeaderVals('Logistic Information');
+        const itemLine = lcSelected.map(i => { const e = logisticModels.find(m => m.item === i); return e?.skus?.[0] || i; }).join('  ·  ');
+        const isMulti  = lcSelected.length > 1;
+        const children = [makeHeaderTable('ViewSonic', subtitle, itemLine, conf), blankPara];
+
+        // Read DOM — structure is reliable: .lc-section-header → .lc-row (.lc-key + .lc-val×N)
+        document.querySelectorAll('#docContainer .lc-section-header').forEach(secEl => {
+          children.push(sectionLabel(secEl.textContent.trim()));
+          const rowDefs = [];
+          if (isMulti) {
+            const modelNames = lcSelected.map(i => { const e = logisticModels.find(m => m.item === i); return e?.skus?.join(' / ') || i; });
+            rowDefs.push({ key: 'Specification', vals: modelNames, isModelHeader: true });
+          }
+          let el = secEl.nextElementSibling;
+          while (el && el.classList.contains('lc-row')) {
+            const key  = el.querySelector('.lc-key')?.innerText?.trim() || '';
+            const vCells = [...el.querySelectorAll('.lc-val')];
+            const vals = vCells.map(c => cleanNum(c.innerText?.trim() || '—'));
+            rowDefs.push(vals.length > 1 ? { key, vals } : { key, value: vals[0] || '—' });
+            el = el.nextElementSibling;
+          }
+          if (rowDefs.length) children.push(makeTable(rowDefs, isMulti ? lcSelected.length : 1));
+        });
+
+        const label = lcSelected.map(i => { const e = logisticModels.find(m => m.item === i); return e?.skus?.[0] || i; }).join('_vs_');
+        const doc_  = new Document({ sections: [{ properties: { page: pageProps }, children }] });
+        const blob  = await Packer.toBlob(doc_);
+        const url   = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `Logistic_${label}_${new Date().toISOString().slice(0,10)}.docx`; a.click();
+        URL.revokeObjectURL(url); hideLoading(); showToast('✓ Word document downloaded', 'success'); return;
+      }
+
+      // ════════════════════════════════
+      // ── COMPLIANCE ──
+      // Rebuild from Excel, then overlay DOM edits
+      // ════════════════════════════════
+      if (appMode === 'compliance') {
+        const { subtitle, conf } = getLCHeaderVals('Compliance Certification Matrix');
+        const itemLine = cmSelected.join('  ·  ');
+        const children = [makeHeaderTable('ViewSonic', subtitle, itemLine, conf), blankPara];
+
+        // Read from Excel for reliable structure
+        const ws  = workbook.Sheets['Compliance'];
+        const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+        const row1 = raw[0] || [], row2 = raw[1] || [], row3 = raw[2] || [], row4 = raw[3] || [];
+
+        // Build cert column map
+        const certCols = [];
+        let curReg = '', curCty = '';
+        for (let c = 3; c < row3.length; c++) {
+          curReg = row1[c] ? String(row1[c]).trim() : '';
+          if (row2[c]) curCty = String(row2[c]).trim();
+          if (row3[c]) certCols.push({ c, region: curReg, country: curCty,
+            cert: String(row3[c]).replace(/\n/g,' ').trim(), vm: String(row4[c]||'').trim() });
+        }
+
+        // Find each item's data row
+        const modelRows = cmSelected.map(item => {
+          const entry = complianceModels.find(m => m.item === item);
+          if (!entry) throw new Error(`Item not found: ${item}`);
+          return entry.row;
+        });
+
+        // Build DOM edit overlay: map cert col index → item index → edited value
+        const domEdits = {};
+        const compTableEl = document.querySelector('.compliance-table');
+        if (compTableEl) {
+          const tbodyRows = [...compTableEl.querySelectorAll('tbody tr')];
+          tbodyRows.forEach((tr, rowIdx) => {
+            if (rowIdx >= certCols.length) return;
+            const tds = [...tr.querySelectorAll('td')];
+            // tds: [region, country, cert, vm, ...value cells]
+            const valueTds = tds.slice(4);
+            // value cells layout: for each item, one cell per region (numRegions cols)
+            // We stored the active (non-grey) cell per item during HTML build
+            // Each item has regionOrder.length cells; find the relevant one
+            const numRegions = [...new Set(certCols.map(c => c.region))].length;
+            cmSelected.forEach((item, itemIdx) => {
+              const startIdx = itemIdx * numRegions;
+              const relevantRegion = certCols[rowIdx].region;
+              const regionOrder = [...new Set(certCols.map(c => c.region))];
+              const regionOffset = regionOrder.indexOf(relevantRegion);
+              const tdIdx = startIdx + regionOffset;
+              const td = valueTds[tdIdx];
+              if (td && td.style.background !== 'rgb(245, 245, 245)' && td.style.background !== '#f5f5f5') {
+                const v = td.innerText?.trim();
+                if (v !== undefined) {
+                  if (!domEdits[rowIdx]) domEdits[rowIdx] = {};
+                  domEdits[rowIdx][itemIdx] = v;
+                }
+              }
+            });
+          });
+        }
+
+        // Build Word rows using Excel data + DOM overlay
+        const numItems = cmSelected.length;
+        const rowDefs = [];
+        // Model name header
+        rowDefs.push({ key: 'Specification', vals: cmSelected, isModelHeader: true });
+
+        certCols.forEach(({ c, region, country, cert, vm }, rowIdx) => {
+          const key = `[${region}] ${country} — ${cert} (${vm})`;
+          const vals = modelRows.map((mr, itemIdx) => {
+            // Use DOM edit if available, else Excel value
+            if (domEdits[rowIdx] && domEdits[rowIdx][itemIdx] !== undefined)
+              return domEdits[rowIdx][itemIdx] || '—';
+            const v = mr[c];
+            return (v !== null && v !== undefined && String(v).trim()) ? String(v).trim() : '—';
+          });
+          rowDefs.push(numItems > 1 ? { key, vals } : { key, value: vals[0] });
+        });
+
+        children.push(sectionLabel('Compliance Certifications'));
+        children.push(makeTable(rowDefs, numItems));
+
+        const label = cmSelected.join('_vs_') || 'compliance';
+        const doc_  = new Document({ sections: [{ properties: { page: pageProps }, children }] });
+        const blob  = await Packer.toBlob(doc_);
+        const url   = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `Compliance_${label}_${new Date().toISOString().slice(0,10)}.docx`; a.click();
+        URL.revokeObjectURL(url); hideLoading(); showToast('✓ Word document downloaded', 'success'); return;
+      }
+
+      // ════════════════════════════════
+      // ── PRODUCT SPEC ──
+      // ════════════════════════════════
+      const confText = document.querySelector('#psrDocument .confidential-badge')?.textContent?.trim() || 'CONFIDENTIAL';
+      const subtitle = document.querySelector('#psrDocument .doc-meta[contenteditable]')?.textContent?.trim()
+        || (compareMode ? 'Product Comparison Spec Sheet' : `Product Specification:  ${currentModel}`);
+      const cchNames = [...document.querySelectorAll('.cch-name')].map(el => el.textContent.trim());
+
       const piFields = [
         ['Model Name',   document.getElementById('pi_modelname')?.value || ''],
         ['Model No.',    document.getElementById('pi_modelno')?.value || ''],
@@ -2772,120 +3011,7 @@ function exportWord() {
         ['Advanced',  document.getElementById('pa_advanced')?.value || ''],
       ].filter(([,v]) => v.trim());
 
-      const confText = document.querySelector('.confidential-badge')?.textContent?.trim() || 'CONFIDENTIAL';
-      // For compare mode, read the editable model names from column header
-      const cchNames = [...document.querySelectorAll('.cch-name')].map(el => el.textContent.trim());
-      const subtitle = document.querySelector('.doc-meta[contenteditable]')?.textContent?.trim() ||
-        (compareMode ? 'Product Comparison Spec Sheet' : `Product Specification:  ${currentModel}`);
-
-      // Content width at 1.27cm margins: A3 landscape 23811 - 720*2 = 22371 DXA
-      const TOTAL_W = 22371;
-      const KEY_W   = 3500;
-      const VAL_W   = TOTAL_W - KEY_W; // 18871 (A3 landscape)
-
-      // ── header table ──
-      const headerTable = new Table({
-        width: { size: TOTAL_W, type: WidthType.DXA },
-        columnWidths: [TOTAL_W - 2400, 2400],
-        borders: noBorders,
-        rows: [new TableRow({ children: [
-          new TableCell({
-            borders: noBorders,
-            width: { size: TOTAL_W - 2400, type: WidthType.DXA },
-            shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-            verticalAlign: VerticalAlign.CENTER,
-            margins: { top: 140, bottom: 140, left: 200, right: 200 },
-            children: [
-              new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: 'ViewSonic', bold: true, color: 'FFFFFF', size: 44, font: FONT })] }),
-              new Paragraph({ spacing: { before: 40, after: 0 }, children: [new TextRun({ text: subtitle, bold: true, color: 'CCE0FF', size: 21, font: FONT })] }),
-            ]
-          }),
-          new TableCell({
-            borders: noBorders,
-            width: { size: 2400, type: WidthType.DXA },
-            shading: { fill: 'CC2200', type: ShadingType.CLEAR },
-            verticalAlign: VerticalAlign.CENTER,
-            margins: { top: 100, bottom: 100, left: 120, right: 120 },
-            children: [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0 }, children: [new TextRun({ text: confText, bold: true, color: 'FFFFFF', size: 18, font: FONT })] })]
-          }),
-        ]})]
-      });
-
-      // ── spec table builder (supports 1 value col or N value cols) ──
-      function makeTable(rowDefs, numValCols = 1) {
-        const valColW = Math.floor(VAL_W / numValCols);
-        const colWidths = [KEY_W, ...Array(numValCols).fill(valColW)];
-        const totalCols = 1 + numValCols;
-
-        return new Table({
-          width: { size: TOTAL_W, type: WidthType.DXA },
-          columnWidths: colWidths,
-          borders: { top: border, bottom: border, left: border, right: border, insideH: border, insideV: border },
-          rows: rowDefs.map(({ key, value, vals, isHeader, isModelHeader }) => {
-
-            // Model name header row (dark blue, one cell per column)
-            if (isModelHeader) {
-              const keyCellMH = new TableCell({
-                borders, margins: cm,
-                width: { size: KEY_W, type: WidthType.DXA },
-                shading: { fill: '162D4A', type: ShadingType.CLEAR },
-                verticalAlign: VerticalAlign.CENTER,
-                children: [new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: key, bold: true, color: 'AABBCC', size: 15, font: FONT })] })]
-              });
-              const valCellsMH = (vals || []).map((v, i) => new TableCell({
-                borders, margins: cm,
-                width: { size: valColW, type: WidthType.DXA },
-                shading: { fill: '162D4A', type: ShadingType.CLEAR },
-                verticalAlign: VerticalAlign.CENTER,
-                children: [
-                  new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: `Model ${i+1}`, color: '8899AA', size: 13, font: FONT })] }),
-                  new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: v, bold: true, color: 'FFFFFF', size: 17, font: FONT })] }),
-                ]
-              }));
-              return new TableRow({ children: [keyCellMH, ...valCellsMH] });
-            }
-
-            // Section header row (spans all columns)
-            if (isHeader) {
-              return new TableRow({ children: [
-                new TableCell({
-                  columnSpan: totalCols,
-                  borders, margins: cm,
-                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                  verticalAlign: VerticalAlign.CENTER,
-                  children: [new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: key, bold: true, color: 'FFFFFF', size: 19, font: FONT })] })]
-                })
-              ]});
-            }
-
-            // Normal data row — use vals[] if provided, else single value
-            const rowVals = vals || (value !== undefined ? [value] : ['']);
-            const keyCell = new TableCell({
-              borders, margins: cm,
-              width: { size: KEY_W, type: WidthType.DXA },
-              shading: { fill: 'FAFAFA', type: ShadingType.CLEAR },
-              verticalAlign: VerticalAlign.CENTER,
-              children: textParas(key, { bold: true, color: '444444', size: 17 })
-            });
-            const valCells = rowVals.map(v => new TableCell({
-              borders, margins: cm,
-              width: { size: valColW, type: WidthType.DXA },
-              verticalAlign: VerticalAlign.CENTER,
-              children: textParas(v, { size: 17 })
-            }));
-            return new TableRow({ children: [keyCell, ...valCells] });
-          })
-        });
-      }
-
-      function sectionLabel(text) {
-        return new Paragraph({
-          spacing: { before: 160, after: 60 },
-          children: [new TextRun({ text: text.toUpperCase(), bold: true, color: '1E3A5F', size: 16, font: FONT })]
-        });
-      }
-
-      const children = [headerTable, new Paragraph({ spacing: { before: 0, after: 0 }, children: [] })];
+      const children = [makeHeaderTable('ViewSonic', subtitle, null, confText), blankPara];
 
       if (piFields.length) {
         children.push(sectionLabel('Product Info'));
@@ -2896,15 +3022,11 @@ function exportWord() {
         children.push(makeTable(paFields.map(([k,v]) => ({ key: k, value: v }))));
       }
 
-      // Detect compare mode from DOM
-      const isCompare = compareMode && compareList.length >= 2;
+      const isCompare  = compareMode && compareList.length >= 2;
       const numValCols = isCompare ? compareList.length : 1;
-
-      // Spec sections — build rows
       const specRowDefs = [];
-      if (isCompare && cchNames.length >= 2) {
+      if (isCompare && cchNames.length >= 2)
         specRowDefs.push({ key: 'Specification', vals: cchNames, isModelHeader: true });
-      }
 
       document.querySelectorAll('.spec-section').forEach(section => {
         const cat = section.querySelector('h3').textContent.trim();
@@ -2915,12 +3037,9 @@ function exportWord() {
           const key = r.querySelector('.spec-key').innerText.trim();
           const valCells = [...r.querySelectorAll('.spec-value')];
           if (isCompare) {
-            // Each .spec-value is one model's column — pass as vals array
-            const vals = valCells.map(c => c.innerText.replace(/🚫/g,'').trim());
-            specRowDefs.push({ key, vals });
+            specRowDefs.push({ key, vals: valCells.map(c => c.innerText.replace(/🚫/g,'').trim()) });
           } else {
-            const val = valCells[0]?.innerText.replace(/🚫/g,'').trim() || '';
-            specRowDefs.push({ key, value: val });
+            specRowDefs.push({ key, value: valCells[0]?.innerText.replace(/🚫/g,'').trim() || '' });
           }
         });
       });
@@ -2931,20 +3050,9 @@ function exportWord() {
       }
 
       const docLabel = isCompare ? compareList.join('_vs_') : (currentModel || 'export');
-      const document_ = new Document({
-        sections: [{
-          properties: {
-            page: {
-              size: { width: 16838, height: 23811, orientation: PageOrientation.LANDSCAPE },
-              margin: { top: 720, right: 720, bottom: 720, left: 720 }
-            }
-          },
-          children
-        }]
-      });
-
-      const blob = await Packer.toBlob(document_);
-      const url = URL.createObjectURL(blob);
+      const doc_     = new Document({ sections: [{ properties: { page: pageProps }, children }] });
+      const blob     = await Packer.toBlob(doc_);
+      const url      = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `PSR_${docLabel}_${new Date().toISOString().slice(0,10)}.docx`;
@@ -2952,6 +3060,7 @@ function exportWord() {
       URL.revokeObjectURL(url);
       hideLoading();
       showToast('✓ Word document downloaded', 'success');
+
     } catch (err) {
       hideLoading();
       showToast('Export failed: ' + err.message, 'error');
@@ -2959,6 +3068,7 @@ function exportWord() {
     }
   }, 100);
 }
+
 
 // ── RENAME / DELETE SECTION ──
 let pendingRenameHeader = null;
